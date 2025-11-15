@@ -1,0 +1,21 @@
+{
+  "crt_effects": {
+    "enabled": true,
+    "distortion": {
+      "strength": 0.03,
+      "zoom": 1.01
+    },
+    "glow": {
+      "strength": "0.5px",
+      "color": "rgba(255, 255, 255, 0.4)"
+    },
+    "blur": {
+      "strength": "0.3px"
+    }
+  },
+  "colors": {
+    "text_default": "#FFFFFF",
+    "text_completed": "#888888",
+    "highlight_bg": "rgba(255, 255, 255, 0.1)"
+  }
+}

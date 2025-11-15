@@ -1,0 +1,295 @@
+/* CRT显示器风格的全局样式 */
+
+/* 导入像素字体 */
+@import url('https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap');
+
+/* 基础样式 */
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  font-family: 'Press Start 2P', monospace;
+  background-color: #000000;
+  color: #ffffff;
+  overflow: hidden;
+  image-rendering: pixelated;
+  image-rendering: -moz-crisp-edges;
+  image-rendering: crisp-edges;
+  height: 100vh;
+  margin: 0;
+  padding: 0;
+}
+
+/* CRT容器效果 */
+.crt-container {
+  width: 100vw;
+  height: 100vh;
+  position: relative;
+  overflow: hidden;
+}
+
+/* 扫描线效果 */
+.crt-container::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(
+    rgba(18, 16, 16, 0) 50%,
+    rgba(0, 0, 0, 0.15) 50%
+  );
+  background-size: 100% 4px;
+  z-index: 1;
+  pointer-events: none;
+  animation: scanline 8s linear infinite;
+}
+
+@keyframes scanline {
+  0% {
+    transform: translateY(0);
+  }
+  100% {
+    transform: translateY(10px);
+  }
+}
+
+/* 闪烁效果 */
+.crt-container::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: rgba(18, 16, 16, 0.1);
+  opacity: 0;
+  z-index: 2;
+  pointer-events: none;
+  animation: flicker 0.15s infinite;
+}
+
+@keyframes flicker {
+  0% {
+    opacity: 0.27861;
+  }
+  5% {
+    opacity: 0.34769;
+  }
+  10% {
+    opacity: 0.23604;
+  }
+  15% {
+    opacity: 0.90626;
+  }
+  20% {
+    opacity: 0.18128;
+  }
+  25% {
+    opacity: 0.83891;
+  }
+  30% {
+    opacity: 0.65583;
+  }
+  35% {
+    opacity: 0.67807;
+  }
+  40% {
+    opacity: 0.26559;
+  }
+  45% {
+    opacity: 0.84693;
+  }
+  50% {
+    opacity: 0.96019;
+  }
+  55% {
+    opacity: 0.08594;
+  }
+  60% {
+    opacity: 0.20313;
+  }
+  65% {
+    opacity: 0.71988;
+  }
+  70% {
+    opacity: 0.53455;
+  }
+  75% {
+    opacity: 0.37288;
+  }
+  80% {
+    opacity: 0.71428;
+  }
+  85% {
+    opacity: 0.70419;
+  }
+  90% {
+    opacity: 0.7003;
+  }
+  95% {
+    opacity: 0.36108;
+  }
+  100% {
+    opacity: 0.24387;
+  }
+}
+
+/* 应用主容器 */
+#app {
+  width: 100%;
+  height: 100vh;
+  position: relative;
+  z-index: 3;
+  overflow: hidden;
+}
+
+/* 滚动条样式 */
+::-webkit-scrollbar {
+  width: 10px;
+}
+
+::-webkit-scrollbar-track {
+  background: #000000;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #ffffff;
+  border-radius: 0;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #cccccc;
+}
+
+/* 选中文本样式 */
+::selection {
+  background: #ffffff;
+  color: #000000;
+}
+
+/* 链接样式 */
+a {
+  color: #ffffff;
+  text-decoration: none;
+}
+
+a:hover {
+  text-decoration: underline;
+}
+
+/* 按钮基础样式 */
+button {
+  font-family: 'Press Start 2P', monospace;
+  background: #000000;
+  color: #ffffff;
+  border: 2px solid #ffffff;
+  padding: 10px 20px;
+  cursor: pointer;
+  font-size: 12px;
+  transition: all 0.1s;
+}
+
+button:hover {
+  background: #ffffff;
+  color: #000000;
+}
+
+button:active {
+  transform: scale(0.95);
+}
+
+button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* 输入框样式 */
+input, textarea, select {
+  font-family: 'Press Start 2P', monospace;
+  background: #000000;
+  color: #ffffff;
+  border: 2px solid #ffffff;
+  padding: 8px;
+  font-size: 10px;
+}
+
+input:focus, textarea:focus, select:focus {
+  outline: none;
+  box-shadow: 0 0 10px #ffffff;
+}
+
+/* 表格基础样式 */
+table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+
+th, td {
+  border: 1px solid #ffffff;
+  padding: 8px;
+  text-align: left;
+}
+
+th {
+  background: #ffffff;
+  color: #000000;
+  font-weight: normal;
+}
+
+/* 完成项样式 */
+.completed {
+  color: #888888 !important;
+  text-decoration: line-through;
+}
+
+/* 高亮样式 */
+.highlight {
+  background-color: rgba(255, 255, 255, 0.1) !important;
+}
+
+/* 错误通知样式 */
+.error-notification {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  background: #ff0000;
+  color: #ffffff;
+  padding: 10px;
+  text-align: center;
+  font-size: 10px;
+  z-index: 1000;
+  animation: slideUp 0.3s ease-out;
+}
+
+@keyframes slideUp {
+  from {
+    transform: translateY(100%);
+  }
+  to {
+    transform: translateY(0);
+  }
+}
+
+/* 响应式设计 */
+@media (max-width: 768px) {
+  body {
+    font-size: 10px;
+  }
+  
+  button {
+    font-size: 10px;
+    padding: 8px 16px;
+  }
+  
+  th, td {
+    font-size: 10px;
+    padding: 6px;
+  }
+}
