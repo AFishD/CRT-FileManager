@@ -1,0 +1,40 @@
+# 排除data目录及其子目录中的所有.md文件
+data/**/*.md
+
+# 排除data目录本身（可选，如果希望完全排除data目录）
+# data/
+
+# 常见的Node.js忽略项
+node_modules/
+dist/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# 常见的Python忽略项
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+*.egg-info/
+
+# IDE相关
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS相关
+.DS_Store
+Thumbs.db
+
+# Docker相关
+.dockerignore
