@@ -5,8 +5,51 @@
  * 包含：像素字体、CRT色调、荧光粉余晖效果
  * ============================================================================ */
 
-/* 导入像素字体 */
-@import url('https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap');
+/* 本地像素字体 - Fusion Pixel 12px Monospaced */
+@font-face {
+  font-family: 'Fusion Pixel';
+  src: url('../../fonts/fusion-pixel-12px-monospaced-latin.otf.woff2') format('woff2');
+  font-weight: normal;
+  font-style: normal;
+  font-display: swap;
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+2000-206F, U+2074, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
+@font-face {
+  font-family: 'Fusion Pixel';
+  src: url('../../fonts/fusion-pixel-12px-monospaced-zh_hans.otf.woff2') format('woff2');
+  font-weight: normal;
+  font-style: normal;
+  font-display: swap;
+  unicode-range: U+2E80-9FFF, U+F900-FAFF, U+FE30-FE4F, U+FF00-FFEF;
+}
+
+@font-face {
+  font-family: 'Fusion Pixel';
+  src: url('../../fonts/fusion-pixel-12px-monospaced-zh_hant.otf.woff2') format('woff2');
+  font-weight: normal;
+  font-style: normal;
+  font-display: swap;
+  unicode-range: U+2E80-9FFF, U+F900-FAFF, U+FE30-FE4F;
+}
+
+@font-face {
+  font-family: 'Fusion Pixel';
+  src: url('../../fonts/fusion-pixel-12px-monospaced-ja.otf.woff2') format('woff2');
+  font-weight: normal;
+  font-style: normal;
+  font-display: swap;
+  unicode-range: U+3000-303F, U+3040-309F, U+30A0-30FF, U+31F0-31FF, U+FF65-FF9F;
+}
+
+@font-face {
+  font-family: 'Fusion Pixel';
+  src: url('../../fonts/fusion-pixel-12px-monospaced-ko.otf.woff2') format('woff2');
+  font-weight: normal;
+  font-style: normal;
+  font-display: swap;
+  unicode-range: U+AC00-D7AF, U+1100-11FF, U+3130-318F;
+}
 
 /* === CSS 变量 (Design Tokens) === */
 :root {
@@ -25,7 +68,7 @@
   --crt-glow-strength: 1px;
 
   /* 字体 */
-  --crt-font: 'Press Start 2P', 'Courier New', monospace;
+  --crt-font: 'Fusion Pixel', 'Courier New', monospace;
   --crt-font-size-xs: 8px;
   --crt-font-size-sm: 10px;
   --crt-font-size-md: 12px;

@@ -94,7 +94,7 @@ const calculateColumnWidths = async () => {
   measurer.style.visibility = 'hidden';
   measurer.style.whiteSpace = 'nowrap';
   measurer.style.fontSize = '10px';
-  measurer.style.fontFamily = "'Press Start 2P', monospace";
+  measurer.style.fontFamily = "'Fusion Pixel', 'Courier New', monospace";
   document.body.appendChild(measurer);
 
   for (let i = 0; i < numColumns; i++) {

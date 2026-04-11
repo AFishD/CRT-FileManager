@@ -33,15 +33,13 @@ FROM python:3.10-slim
 
 WORKDIR /app
 
-# 配置Debian国内镜像源（阿里云）
-RUN echo "配置Debian镜像源..." && \
-    # 备份原始sources.list（如果存在）
-    if [ -f /etc/apt/sources.list ]; then cp /etc/apt/sources.list /etc/apt/sources.list.backup; fi && \
-    # 创建新的sources.list文件
-    echo "deb http://mirrors.aliyun.com/debian trixie main contrib non-free" > /etc/apt/sources.list && \
-    echo "deb http://mirrors.aliyun.com/debian trixie-updates main contrib non-free" >> /etc/apt/sources.list && \
-    echo "deb http://mirrors.aliyun.com/debian-security trixie-security main contrib non-free" >> /etc/apt/sources.list && \
-    echo "镜像源配置完成"
+# 配置Debian国内镜像源（阿里云），使用sed动态替换以兼容新老版本的Debian
+RUN echo "替换Debian镜像源为阿里云..." && \
+    sed -i 's/deb.debian.org/mirrors.aliyun.com/g' /etc/apt/sources.list.d/debian.sources 2>/dev/null || true && \
+    sed -i 's/deb.debian.org/mirrors.aliyun.com/g' /etc/apt/sources.list 2>/dev/null || true && \
+    sed -i 's/security.debian.org/mirrors.aliyun.com/g' /etc/apt/sources.list.d/debian.sources 2>/dev/null || true && \
+    sed -i 's/security.debian.org/mirrors.aliyun.com/g' /etc/apt/sources.list 2>/dev/null || true && \
+    echo "镜像源替换完成"
 
 # 安装系统依赖（gcc用于编译Python包，curl用于健康检查）
 RUN apt-get update && apt-get install -y \
