@@ -276,7 +276,6 @@ npm run dev
 │   └── vite.config.js           # Vite构建配置
 ├── data/                        # Markdown文件存放目录
 ├── docker-compose.yml           # Docker部署配置
-├── PROJECT_PROMPT.md            # 项目需求文档
 └── README.md                    # 项目说明文档
 ```
 
