@@ -2,7 +2,8 @@
   <div class="file-tree">
     <!-- 根节点（只在最顶层显示） -->
     <div v-if="level === 0" class="root-node">
-      Markdown_Tracker/
+      <span class="root-icon">■</span>
+      <span class="root-text">DATA/</span>
     </div>
     
     <!-- 文件树内容 -->
@@ -14,6 +15,7 @@
           
           <!-- 目录节点 -->
           <div v-if="node.type === 'directory'" class="directory">
+            <span class="dir-icon">▸</span>
             <span class="name">{{ node.name }}/</span>
           </div>
           
@@ -21,12 +23,13 @@
           <div v-else class="file"
                :class="{ 'has-tables': node.hasTables, 'active': isActive(node) }"
                @click="selectFile(node)">
+            <span class="file-icon">{{ node.hasTables ? '◈' : '◇' }}</span>
             <span class="name">{{ node.name }}</span>
-            <span v-if="node.tableCount" class="table-count">({{ node.tableCount }})</span>
+            <span v-if="node.tableCount" class="table-count">[{{ node.tableCount }}]</span>
           </div>
         </div>
         
-        <!-- 递归渲染子节点（始终展开） -->
+        <!-- 递归渲染子节点 -->
         <div v-if="node.type === 'directory' && node.children && node.children.length > 0" class="children">
           <FileTree
             :treeData="node.children"
@@ -97,18 +100,33 @@ const getChildPrefix = (index) => {
 
 <style scoped>
 .file-tree {
-  padding: 10px;
-  font-family: 'Courier New', monospace;
-  font-size: 14px;
-  color: #ffffff;
+  padding: var(--crt-spacing-md);
+  font-family: var(--crt-font);
+  font-size: var(--crt-font-size-sm);
+  color: var(--crt-text);
   white-space: pre;
-  line-height: 1.4;
+  line-height: 1.8;
+  /* 荧光粉余晖 */
+  text-shadow: 0 0 var(--crt-glow-strength) var(--crt-glow-color);
 }
 
 .root-node {
   font-weight: bold;
-  margin-bottom: 10px;
-  color: #ffffff;
+  margin-bottom: var(--crt-spacing-md);
+  color: var(--crt-text);
+  display: flex;
+  align-items: center;
+  gap: var(--crt-spacing-sm);
+  padding-bottom: var(--crt-spacing-sm);
+  border-bottom: 1px solid var(--crt-border);
+}
+
+.root-icon {
+  color: var(--crt-text);
+}
+
+.root-text {
+  letter-spacing: 2px;
 }
 
 .tree-content {
@@ -119,45 +137,64 @@ const getChildPrefix = (index) => {
   display: flex;
   align-items: center;
   margin: 0;
+  padding: 1px 0;
 }
 
 .tree-prefix {
-  color: #888888;
+  color: var(--crt-border);
   user-select: none;
 }
 
 .directory {
-  color: #ffffff;
+  color: var(--crt-text);
   font-weight: bold;
+  display: flex;
+  align-items: center;
+  gap: var(--crt-spacing-xs);
+}
+
+.dir-icon {
+  color: var(--crt-text-dim);
+  font-size: var(--crt-font-size-xs);
 }
 
 .file {
   cursor: pointer;
-  transition: all 0.2s;
-  color: #cccccc;
+  transition: all 0.15s ease;
+  color: var(--crt-text-dim);
+  display: flex;
+  align-items: center;
+  gap: var(--crt-spacing-xs);
+  padding: 1px 4px;
+}
+
+.file-icon {
+  font-size: var(--crt-font-size-xs);
 }
 
 .file.has-tables {
-  color: #ffffff;
+  color: var(--crt-text);
 }
 
 .file.has-tables:hover {
-  background-color: rgba(255, 255, 255, 0.1);
+  background-color: var(--crt-highlight);
+  box-shadow: 0 0 4px rgba(255, 255, 255, 0.05);
 }
 
 .file.active {
-  background-color: rgba(255, 255, 255, 0.2);
-  color: #ffffff;
+  background-color: var(--crt-highlight-strong);
+  color: var(--crt-text);
+  box-shadow: 0 0 6px rgba(255, 255, 255, 0.08);
 }
 
 .name {
-  font-size: 14px;
+  font-size: var(--crt-font-size-sm);
 }
 
 .table-count {
-  font-size: 12px;
-  color: #888888;
-  margin-left: 5px;
+  font-size: var(--crt-font-size-xs);
+  color: var(--crt-text-dim);
+  margin-left: var(--crt-spacing-xs);
 }
 
 .children {

@@ -43,9 +43,10 @@ RUN echo "配置Debian镜像源..." && \
     echo "deb http://mirrors.aliyun.com/debian-security trixie-security main contrib non-free" >> /etc/apt/sources.list && \
     echo "镜像源配置完成"
 
-# 安装系统依赖
+# 安装系统依赖（gcc用于编译Python包，curl用于健康检查）
 RUN apt-get update && apt-get install -y \
     gcc \
+    curl \
     && rm -rf /var/lib/apt/lists/*
 
 # 复制Python依赖

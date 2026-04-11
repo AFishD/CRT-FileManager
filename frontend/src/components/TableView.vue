@@ -8,7 +8,6 @@
       tabindex="0"
     >
       <table>
-        <!-- CHANGED: Add colgroup to apply calculated column widths -->
         <colgroup>
           <col 
             v-for="(width, index) in columnWidths" 
@@ -63,18 +62,13 @@ const props = defineProps({
 
 const emit = defineEmits(['update'])
 
-// --- Existing Refs ---
 const selectedRowIndex = ref(0)
 const scrollContainerRef = ref(null)
 const rowRefs = ref([])
 const headerRef = ref(null)
 const headerHeight = ref(0)
-
-// --- CHANGED: New Ref for column widths ---
 const columnWidths = ref([])
 
-
-// --- FIXED: 核心算法修正 ---
 const calculateColumnWidths = async () => {
   await nextTick();
 
@@ -84,37 +78,30 @@ const calculateColumnWidths = async () => {
     return;
   }
 
-  // --- Stage 1: Constants & Initialization ---
-
-  // FIXED (1/3): 正确计算容器的可用净宽度
   const computedStyle = getComputedStyle(containerEl);
   const paddingX = parseFloat(computedStyle.paddingLeft) + parseFloat(computedStyle.paddingRight);
   const containerWidth = containerEl.clientWidth - paddingX;
 
-  // FIXED (2/3): 修正CELL_PADDING以匹配CSS
-  const CELL_PADDING = 20; // 10px left + 10px right from CSS
+  const CELL_PADDING = 20;
   const MAX_WIDTH = 500;
   const MIN_WIDTH = 60;
   
   const numColumns = visibleHeader.value.length;
   const idealWidths = new Array(numColumns).fill(0);
   
-  // --- Stage 2: Measure & Calculate Ideal Widths ---
   const measurer = document.createElement('span');
   measurer.style.position = 'absolute';
   measurer.style.visibility = 'hidden';
   measurer.style.whiteSpace = 'nowrap';
-  // Match font styles from the table cells for accurate measurement
   measurer.style.fontSize = '10px';
+  measurer.style.fontFamily = "'Press Start 2P', monospace";
   document.body.appendChild(measurer);
 
   for (let i = 0; i < numColumns; i++) {
-    // Include header in measurement
     let maxContentWidth = 0;
     measurer.textContent = visibleHeader.value[i];
     maxContentWidth = measurer.getBoundingClientRect().width;
 
-    // Measure all cells in the column
     visibleRows.value.forEach(row => {
       if (Array.isArray(row) && row[i] != null) {
         measurer.textContent = row[i];
@@ -127,25 +114,21 @@ const calculateColumnWidths = async () => {
 
     idealWidths[i] = Math.min(maxContentWidth + CELL_PADDING, MAX_WIDTH);
   }
-  document.body.removeChild(measurer); // Cleanup
+  document.body.removeChild(measurer);
 
-  // --- Stage 3: Decision & Final Width Calculation ---
   const totalIdealWidth = idealWidths.reduce((sum, w) => sum + w, 0);
   let finalWidths = [];
 
   if (totalIdealWidth <= containerWidth) {
-    // Scenario A: Un-overflowed - Stretch to fill
     const stretchRatio = containerWidth / totalIdealWidth;
     finalWidths = idealWidths.map(w => w * stretchRatio);
   } else {
-    // Scenario B: Overflowed - Shrink proportionally
     const overflowWidth = totalIdealWidth - containerWidth;
     
     const shrinkableSpaces = idealWidths.map(w => Math.max(0, w - MIN_WIDTH));
     const totalShrinkableSpace = shrinkableSpaces.reduce((sum, s) => sum + s, 0);
 
     if (totalShrinkableSpace <= 0) {
-      // Edge case: cannot shrink further
       finalWidths = idealWidths.map(() => MIN_WIDTH);
     } else {
       finalWidths = idealWidths.map((idealW, i) => {
@@ -156,16 +139,12 @@ const calculateColumnWidths = async () => {
     }
   }
 
-  // --- Stage 4: Apply ---
   columnWidths.value = finalWidths;
   
-  // Recalculate marquee effects after widths are applied
   await nextTick();
   updateMarqueeEffects();
 };
 
-
-// --- Existing Logic ---
 const updateHeaderHeight = () => {
   if (headerRef.value) {
     headerHeight.value = headerRef.value.offsetHeight + 20;
@@ -194,13 +173,10 @@ const updateMarqueeEffects = () => {
   });
 }
 
-// CHANGED: Watch for data changes to recalculate widths
 watch(() => props.tableData, () => {
   calculateColumnWidths();
 }, { deep: true, immediate: true });
 
-
-// Scrolling logic remains the same
 watch(selectedRowIndex, (newIndex) => {
   const container = scrollContainerRef.value;
   const rowElement = rowRefs.value[newIndex];
@@ -232,7 +208,6 @@ watch(selectedRowIndex, (newIndex) => {
 onMounted(() => {
   nextTick(() => {
     updateHeaderHeight();
-    // Initial width calculation is handled by the immediate watch
     if (scrollContainerRef.value) {
         scrollContainerRef.value.scrollTop = 0;
     }
@@ -241,7 +216,6 @@ onMounted(() => {
 
   window.addEventListener('keydown', handleKeydown);
 
-  // CHANGED: Use ResizeObserver to recalculate widths on container resize
   const resizeObserver = new ResizeObserver(() => {
     calculateColumnWidths();
     updateHeaderHeight();
@@ -257,7 +231,6 @@ onMounted(() => {
   });
 })
 
-// --- Computed properties from previous step (unchanged) ---
 const visibleHeader = computed(() => {
   if (!props.tableData.header) return [];
   return props.tableData.header.slice(0, -1);
@@ -275,8 +248,6 @@ const visibleRows = computed(() => {
 
 const progressColumnIndex = computed(() => props.tableData.header.length - 1)
 
-
-// --- All event handlers and helper functions remain the same ---
 const highlightedRowIndex = computed(() => selectedRowIndex.value)
 
 const isRowCompleted = (rowIndex) => {
@@ -292,18 +263,15 @@ const toggleRowCompletion = (rowIndex) => {
   if (progressColumnIndex.value === -1) return
   
   const row = props.tableData.rows[rowIndex]
-  if (!row || row.length === 0) return // 禁止对分隔行进行操作
+  if (!row || row.length === 0) return
   
-  // 切换进度状态
   row[progressColumnIndex.value] = row[progressColumnIndex.value] === '[x]' ? '[ ]' : '[x]'
   
-  // 发出更新事件
   emit('update', {
-    rows: [...props.tableData.rows] // 发送副本
+    rows: [...props.tableData.rows]
   })
 }
 const handleRowClick = (rowIndex) => {
-  // 如果点击的是分隔行，不进行处理
   if (isSeparatorRow(rowIndex)) return
   
   selectedRowIndex.value = rowIndex
@@ -329,15 +297,10 @@ const moveSelectionDown = () => {
   }
 }
 const handleWheel = (event) => {
-  // 阻止默认的像素滚动
   event.preventDefault()
-
-  // 根据滚轮方向调用相应的移动函数
   if (event.deltaY < 0) {
-    // 向上滚动
     moveSelectionUp()
   } else if (event.deltaY > 0) {
-    // 向下滚动
     moveSelectionDown()
   }
 }
@@ -366,9 +329,6 @@ const handleKeydown = (event) => {
 </script>
 
 <style scoped>
-/* All styles remain the same. The `table-layout: fixed` rule is */
-/* crucial for the <col> widths to be respected correctly. */
-/* ... (no changes to CSS) ... */
 .table-view-container {
   flex-grow: 1;
   height: 100%;
@@ -376,101 +336,136 @@ const handleKeydown = (event) => {
   padding-bottom: 36px;
   box-sizing: border-box;
 }
+
 .table-view {
   height: 100%;
   width: 100%;
   overflow-y: auto;
   outline: none;
-  padding: 0 20px;
+  padding: 0 var(--crt-spacing-xl);
   box-sizing: border-box;
   scrollbar-width: none;
   -ms-overflow-style: none;
 }
+
 .table-view::-webkit-scrollbar {
   display: none;
 }
+
 table {
   width: 100%;
   border-collapse: separate;
-  border-spacing: 0 10px;
-  table-layout: fixed; /* This is important for <col> to work reliably */
+  border-spacing: 0 6px;
+  table-layout: fixed;
 }
+
 thead {
-  background-color: #ffffff;
+  background-color: transparent;
 }
+
 th {
   position: sticky;
-  top: 20px;
+  top: 16px;
   z-index: 10;
-  background: #ffffff;
-  color: #000000;
-  box-shadow: 0 -20px 0 0 #000000;
+  background: var(--crt-bg);
+  color: var(--crt-text);
   border: none;
-  border-bottom: 2px solid #333333;
-  font-size: 10px;
-  padding: 10px;
+  border-bottom: 1px solid var(--crt-border);
+  font-size: var(--crt-font-size-xs);
+  padding: var(--crt-spacing-sm) var(--crt-spacing-sm);
   text-transform: uppercase;
   text-align: center;
-  
-  /* CHANGED: Add overflow hidden to prevent text from spilling out of th */
+  letter-spacing: 1px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-
-  /* FIXED (3/3): 添加 box-sizing */
   box-sizing: border-box;
+  /* 扫描线上的荧光粉效果 */
+  text-shadow: 0 0 var(--crt-glow-strength) var(--crt-glow-color);
+  /* 粘性表头阴影 */
+  box-shadow: 0 -16px 0 0 var(--crt-bg);
 }
+
 th:first-child {
-  border-left: 2px solid #333333;
+  border-left: 1px solid var(--crt-border);
 }
+
 th:last-child {
-  border-right: 2px solid #333333;
+  border-right: 1px solid var(--crt-border);
 }
+
 tbody {
-  border-top: 10px solid #000000;
+  border-top: 6px solid transparent;
 }
+
+tr {
+  cursor: pointer;
+  transition: all 0.1s ease;
+}
+
+tr:not(.separator-row):not(.completed):hover td {
+  background-color: var(--crt-highlight);
+}
+
+tr.highlight td {
+  background-color: var(--crt-highlight-strong);
+  box-shadow: inset 0 0 4px rgba(255, 255, 255, 0.03);
+}
+
 td {
-  font-size: 10px;
-  padding: 8px 10px;
+  font-size: var(--crt-font-size-sm);
+  padding: 6px var(--crt-spacing-sm);
   border: none;
-  border-left: 2px solid #ffffff;
+  border-left: 1px solid var(--crt-border);
   transition: all 0.1s;
-  height: 36px;
+  height: 32px;
   box-sizing: border-box;
   white-space: nowrap;
   overflow: hidden;
   vertical-align: middle;
+  /* 荧光粉余晖 */
+  text-shadow: 0 0 var(--crt-glow-strength) var(--crt-glow-color);
+}
 
-  /* FIXED (3/3): 添加 box-sizing */
-  box-sizing: border-box;
-}
 td:last-child {
-  border-right: 2px solid #ffffff;
+  border-right: 1px solid var(--crt-border);
 }
+
+/* === 已完成行 === */
 tr.completed td {
-  border-left-color: #888888;
-  border-right-color: #888888;
+  color: var(--crt-text-completed);
+  border-left-color: rgba(85, 85, 85, 0.3);
+  border-right-color: rgba(85, 85, 85, 0.3);
+  text-decoration: line-through;
+  text-shadow: none;
 }
+
+/* === 分隔行 === */
 tr.separator-row td {
   border: none !important;
   background-color: transparent;
   padding: 0;
-  height: 36px;
+  height: 24px;
 }
+
+/* === 跑马灯 (Marquee) === */
 @keyframes marquee {
   from { transform: translateX(0); }
   to { transform: translateX(-50%); }
 }
+
 td > div.marquee-container {
   display: flex;
   width: fit-content;
   animation: marquee var(--duration) linear infinite;
   animation-play-state: paused;
 }
+
 .marquee-text-part {
   white-space: nowrap;
   margin-right: 40px;
 }
+
 td.is-overflowing > div.marquee-container {
   animation-play-state: running;
 }

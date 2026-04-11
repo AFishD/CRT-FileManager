@@ -1,274 +1,207 @@
-/* CRT显示器风格的全局样式 */
+/* ============================================================================
+ * CRT 显示器风格全局样式
+ * 
+ * 参考 apple2js 项目的 CRT 效果分析文档实现
+ * 包含：像素字体、CRT色调、荧光粉余晖效果
+ * ============================================================================ */
 
 /* 导入像素字体 */
 @import url('https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap');
 
-/* 基础样式 */
+/* === CSS 变量 (Design Tokens) === */
+:root {
+  /* 主题色 */
+  --crt-bg: #000000;
+  --crt-text: #ffffff;
+  --crt-text-dim: #888888;
+  --crt-text-completed: #555555;
+  --crt-border: #333333;
+  --crt-accent: #00ff41; /* 经典绿色终端色 */
+  --crt-highlight: rgba(255, 255, 255, 0.08);
+  --crt-highlight-strong: rgba(255, 255, 255, 0.15);
+
+  /* 荧光粉余晖 (Phosphor Glow) */
+  --crt-glow-color: rgba(255, 255, 255, 0.35);
+  --crt-glow-strength: 1px;
+
+  /* 字体 */
+  --crt-font: 'Press Start 2P', 'Courier New', monospace;
+  --crt-font-size-xs: 8px;
+  --crt-font-size-sm: 10px;
+  --crt-font-size-md: 12px;
+  --crt-font-size-lg: 14px;
+  --crt-font-size-xl: 16px;
+
+  /* 间距 */
+  --crt-spacing-xs: 4px;
+  --crt-spacing-sm: 8px;
+  --crt-spacing-md: 12px;
+  --crt-spacing-lg: 16px;
+  --crt-spacing-xl: 20px;
+  --crt-spacing-xxl: 24px;
+}
+
+/* === 基础重置 === */
 * {
   margin: 0;
   padding: 0;
   box-sizing: border-box;
 }
 
+/* === Body === */
 body {
-  font-family: 'Press Start 2P', monospace;
-  background-color: #000000;
-  color: #ffffff;
+  font-family: var(--crt-font);
+  background-color: var(--crt-bg);
+  color: var(--crt-text);
   overflow: hidden;
+  /* 像素渲染模式 - 让字体和图形保持锐利的像素感 */
   image-rendering: pixelated;
   image-rendering: -moz-crisp-edges;
   image-rendering: crisp-edges;
   height: 100vh;
-  margin: 0;
-  padding: 0;
-}
-
-/* CRT容器效果 */
-.crt-container {
   width: 100vw;
-  height: 100vh;
-  position: relative;
-  overflow: hidden;
-}
-
-/* 扫描线效果 */
-.crt-container::before {
-  content: "";
-  position: absolute;
+  /* 防止iOS Safari的弹性滚动 */
+  position: fixed;
   top: 0;
   left: 0;
-  width: 100%;
-  height: 100%;
-  background: linear-gradient(
-    rgba(18, 16, 16, 0) 50%,
-    rgba(0, 0, 0, 0.15) 50%
-  );
-  background-size: 100% 4px;
-  z-index: 1;
-  pointer-events: none;
-  animation: scanline 8s linear infinite;
 }
 
-@keyframes scanline {
-  0% {
-    transform: translateY(0);
-  }
-  100% {
-    transform: translateY(10px);
-  }
-}
-
-/* 闪烁效果 */
-.crt-container::after {
-  content: "";
-  position: absolute;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
-  background: rgba(18, 16, 16, 0.1);
-  opacity: 0;
-  z-index: 2;
-  pointer-events: none;
-  animation: flicker 0.15s infinite;
-}
-
-@keyframes flicker {
-  0% {
-    opacity: 0.27861;
-  }
-  5% {
-    opacity: 0.34769;
-  }
-  10% {
-    opacity: 0.23604;
-  }
-  15% {
-    opacity: 0.90626;
-  }
-  20% {
-    opacity: 0.18128;
-  }
-  25% {
-    opacity: 0.83891;
-  }
-  30% {
-    opacity: 0.65583;
-  }
-  35% {
-    opacity: 0.67807;
-  }
-  40% {
-    opacity: 0.26559;
-  }
-  45% {
-    opacity: 0.84693;
-  }
-  50% {
-    opacity: 0.96019;
-  }
-  55% {
-    opacity: 0.08594;
-  }
-  60% {
-    opacity: 0.20313;
-  }
-  65% {
-    opacity: 0.71988;
-  }
-  70% {
-    opacity: 0.53455;
-  }
-  75% {
-    opacity: 0.37288;
-  }
-  80% {
-    opacity: 0.71428;
-  }
-  85% {
-    opacity: 0.70419;
-  }
-  90% {
-    opacity: 0.7003;
-  }
-  95% {
-    opacity: 0.36108;
-  }
-  100% {
-    opacity: 0.24387;
-  }
-}
-
-/* 应用主容器 */
+/* === App 容器 === */
 #app {
   width: 100%;
   height: 100vh;
   position: relative;
-  z-index: 3;
+  z-index: 1;
   overflow: hidden;
 }
 
-/* 滚动条样式 */
+/* === 滚动条样式 (CRT风格) === */
 ::-webkit-scrollbar {
-  width: 10px;
+  width: 6px;
 }
 
 ::-webkit-scrollbar-track {
-  background: #000000;
+  background: var(--crt-bg);
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #ffffff;
+  background: var(--crt-border);
   border-radius: 0;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: #cccccc;
+  background: var(--crt-text-dim);
 }
 
-/* 选中文本样式 */
+/* Firefox 滚动条 */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--crt-border) var(--crt-bg);
+}
+
+/* === 选中文本样式 === */
 ::selection {
-  background: #ffffff;
-  color: #000000;
+  background: var(--crt-text);
+  color: var(--crt-bg);
 }
 
-/* 链接样式 */
+/* === 链接样式 === */
 a {
-  color: #ffffff;
+  color: var(--crt-text);
   text-decoration: none;
 }
 
 a:hover {
   text-decoration: underline;
+  text-shadow: 0 0 var(--crt-glow-strength) var(--crt-glow-color);
 }
 
-/* 按钮基础样式 */
+/* === 按钮基础样式 (CRT风格) === */
 button {
-  font-family: 'Press Start 2P', monospace;
-  background: #000000;
-  color: #ffffff;
-  border: 2px solid #ffffff;
-  padding: 10px 20px;
+  font-family: var(--crt-font);
+  background: var(--crt-bg);
+  color: var(--crt-text);
+  border: 1px solid var(--crt-border);
+  padding: var(--crt-spacing-sm) var(--crt-spacing-md);
   cursor: pointer;
-  font-size: 12px;
-  transition: all 0.1s;
+  font-size: var(--crt-font-size-sm);
+  transition: all 0.15s ease;
+  /* 荧光粉余晖效果 */
+  text-shadow: 0 0 var(--crt-glow-strength) var(--crt-glow-color);
+  position: relative;
+  overflow: hidden;
 }
 
 button:hover {
-  background: #ffffff;
-  color: #000000;
+  background: var(--crt-text);
+  color: var(--crt-bg);
+  text-shadow: none;
+  box-shadow: 0 0 8px rgba(255, 255, 255, 0.2);
 }
 
 button:active {
-  transform: scale(0.95);
+  transform: scale(0.97);
 }
 
 button:disabled {
-  opacity: 0.5;
+  opacity: 0.35;
   cursor: not-allowed;
+  box-shadow: none;
 }
 
-/* 输入框样式 */
+button:disabled:hover {
+  background: var(--crt-bg);
+  color: var(--crt-text);
+  text-shadow: 0 0 var(--crt-glow-strength) var(--crt-glow-color);
+}
+
+/* === 输入框样式 === */
 input, textarea, select {
-  font-family: 'Press Start 2P', monospace;
-  background: #000000;
-  color: #ffffff;
-  border: 2px solid #ffffff;
-  padding: 8px;
-  font-size: 10px;
+  font-family: var(--crt-font);
+  background: var(--crt-bg);
+  color: var(--crt-text);
+  border: 1px solid var(--crt-border);
+  padding: var(--crt-spacing-sm);
+  font-size: var(--crt-font-size-sm);
+  text-shadow: 0 0 var(--crt-glow-strength) var(--crt-glow-color);
 }
 
 input:focus, textarea:focus, select:focus {
   outline: none;
-  box-shadow: 0 0 10px #ffffff;
+  border-color: var(--crt-text);
+  box-shadow: 0 0 6px rgba(255, 255, 255, 0.15);
 }
 
-/* 表格基础样式 */
-table {
-  width: 100%;
-  border-collapse: collapse;
-  font-size: 12px;
-}
-
-th, td {
-  border: 1px solid #ffffff;
-  padding: 8px;
-  text-align: left;
-}
-
-th {
-  background: #ffffff;
-  color: #000000;
-  font-weight: normal;
-}
-
-/* 完成项样式 */
+/* === 完成项样式 === */
 .completed {
-  color: #888888 !important;
+  color: var(--crt-text-completed) !important;
   text-decoration: line-through;
+  text-shadow: none !important;
 }
 
-/* 高亮样式 */
+/* === 高亮样式 === */
 .highlight {
-  background-color: rgba(255, 255, 255, 0.1) !important;
+  background-color: var(--crt-highlight-strong) !important;
 }
 
-/* 错误通知样式 */
+/* === 错误通知条 === */
 .error-notification {
   position: fixed;
   bottom: 0;
   left: 0;
   right: 0;
-  background: #ff0000;
-  color: #ffffff;
-  padding: 10px;
+  background: #660000;
+  color: #ff4444;
+  padding: var(--crt-spacing-sm) var(--crt-spacing-md);
   text-align: center;
-  font-size: 10px;
+  font-size: var(--crt-font-size-xs);
   z-index: 1000;
-  animation: slideUp 0.3s ease-out;
+  animation: notif-slide-up 0.3s ease-out;
+  border-top: 1px solid #ff4444;
+  text-shadow: 0 0 4px rgba(255, 68, 68, 0.5);
 }
 
-@keyframes slideUp {
+@keyframes notif-slide-up {
   from {
     transform: translateY(100%);
   }
@@ -277,19 +210,17 @@ th {
   }
 }
 
-/* 响应式设计 */
+/* === 响应式 === */
 @media (max-width: 768px) {
-  body {
-    font-size: 10px;
+  :root {
+    --crt-font-size-xs: 7px;
+    --crt-font-size-sm: 8px;
+    --crt-font-size-md: 10px;
+    --crt-font-size-lg: 12px;
+    --crt-font-size-xl: 14px;
   }
-  
+
   button {
-    font-size: 10px;
-    padding: 8px 16px;
-  }
-  
-  th, td {
-    font-size: 10px;
-    padding: 6px;
+    padding: 6px 10px;
   }
 }

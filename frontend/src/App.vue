@@ -13,16 +13,20 @@
       />
       
       <div class="content-area">
-        <div v-if="loading" class="loading">
-          加载中...
+        <div v-if="loading" class="status-screen">
+          <div class="status-icon">▓</div>
+          <div class="status-text blink">LOADING...</div>
         </div>
         
-        <div v-else-if="error" class="error">
-          {{ error }}
+        <div v-else-if="error" class="status-screen error">
+          <div class="status-icon">✕</div>
+          <div class="status-text">{{ error }}</div>
         </div>
         
-        <div v-else-if="allFilesData.length === 0" class="empty">
-          未找到Markdown文件，请将.md文件放入data目录
+        <div v-else-if="allFilesData.length === 0" class="status-screen">
+          <div class="status-icon">◇</div>
+          <div class="status-text">NO .MD FILES FOUND</div>
+          <div class="status-hint">Place markdown files in /data directory</div>
         </div>
         
         <!-- 文件树视图 -->
@@ -47,7 +51,7 @@
       </div>
       
       <div v-if="saveError" class="error-notification">
-        上一次自动保存失败
+        ⚠ AUTO-SAVE FAILED
       </div>
     </div>
   </CRTEffect>
@@ -64,14 +68,20 @@ import FileTree from './components/FileTree.vue'
 const config = ref({
   crt_effects: {
     enabled: true,
-    distortion: { strength: 0.03, zoom: 1.01 },
-    glow: { strength: "0.5px", color: "rgba(255, 255, 255, 0.4)" },
-    blur: { strength: "0.3px" }
+    distortion: { strength: 0.05, zoom: 1.02 },
+    scanlines: { opacity: 0.3, spacing: 2 },
+    shadow_mask: { enabled: true, opacity: 0.06 },
+    vignette: { strength: 0.5 },
+    glow: { strength: '1px', color: 'rgba(255, 255, 255, 0.35)' },
+    flicker: { enabled: true, intensity: 0.03 },
+    blur: { strength: '0.3px' }
   },
   colors: {
-    text_default: "#FFFFFF",
-    text_completed: "#888888",
-    highlight_bg: "rgba(255, 255, 255, 0.1)"
+    text_default: '#FFFFFF',
+    text_completed: '#555555',
+    text_dim: '#888888',
+    highlight_bg: 'rgba(255, 255, 255, 0.08)',
+    accent: '#00ff41'
   }
 })
 
@@ -82,27 +92,26 @@ const dirtyChanges = ref([])
 const loading = ref(true)
 const error = ref(null)
 const saveError = ref(false)
-const currentView = ref('file-tree') // 当前视图: 'file-tree' 或 'table'
-const currentFilePath = ref('') // 当前文件路径
-const fileTree = ref([]) // 文件树数据
-const openDirectories = ref(new Set()) // 打开的目录集合
+const currentView = ref('file-tree')
+const currentFilePath = ref('')
+const fileTree = ref([])
+const openDirectories = ref(new Set())
 
-// 自动保存定时器
 let autoSaveInterval = null
 
 // 计算当前标题
 const currentTitle = computed(() => {
   if (currentView.value === 'file-tree') {
-    return 'CRT Collectibles Tracker - 文件列表'
+    return 'FILE MANAGER'
   }
   
-  if (allFilesData.value.length === 0) return 'CRT Collectibles Tracker'
+  if (allFilesData.value.length === 0) return 'CRT FILE MANAGER'
   
   const currentFile = allFilesData.value[currentFileIndex.value]
-  if (!currentFile || currentFile.tables.length === 0) return 'CRT Collectibles Tracker'
+  if (!currentFile || currentFile.tables.length === 0) return 'CRT FILE MANAGER'
   
   const currentTable = currentFile.tables[currentTableIndex.value]
-  return currentTable ? currentTable.title : 'CRT Collectibles Tracker'
+  return currentTable ? currentTable.title : 'CRT FILE MANAGER'
 })
 
 // 计算当前表格数据
@@ -123,7 +132,7 @@ const totalTables = computed(() => {
   return currentFile ? currentFile.tables.length : 0
 })
 
-// 计算文件树
+// 构建文件树
 const buildFileTree = (files) => {
   const tree = []
   const nodeMap = new Map()
@@ -170,7 +179,7 @@ const loadConfig = async () => {
       config.value = await response.json()
     }
   } catch (e) {
-    console.warn('无法加载配置文件，使用默认值')
+    console.warn('Config load failed, using defaults')
   }
 }
 
@@ -186,20 +195,16 @@ const loadStructure = async () => {
     }
     
     const data = await response.json()
-    console.log('加载数据结构:', data)
     allFilesData.value = data.files || []
     
-    // 构建文件树
     fileTree.value = buildFileTree(allFilesData.value)
-    console.log('文件树构建完成:', fileTree.value)
     
-    // 重置索引
     currentFileIndex.value = 0
     currentTableIndex.value = 0
     
   } catch (e) {
-    error.value = `加载数据失败: ${e.message}`
-    console.error('加载结构失败:', e)
+    error.value = `LOAD FAILED: ${e.message}`
+    console.error('Structure load error:', e)
   } finally {
     loading.value = false
   }
@@ -209,17 +214,14 @@ const loadStructure = async () => {
 const handleTableUpdate = (update) => {
   if (!currentTableData.value) return
   
-  // 更新当前表格数据
   currentTableData.value.rows = update.rows
   
-  // 记录更改
   const change = {
     filePath: allFilesData.value[currentFileIndex.value].filePath,
     tableIndex: currentTableIndex.value,
     newRows: update.rows
   }
   
-  // 检查是否已存在相同文件和表格的更改
   const existingIndex = dirtyChanges.value.findIndex(
     c => c.filePath === change.filePath && c.tableIndex === change.tableIndex
   )
@@ -249,30 +251,26 @@ const saveChanges = async () => {
     const result = await response.json()
     
     if (result.success) {
-      console.log('保存成功')
       dirtyChanges.value = []
       saveError.value = false
     } else {
-      console.error('保存失败:', result.message)
       saveError.value = true
     }
   } catch (e) {
-    console.error('保存请求失败:', e)
+    console.error('Save failed:', e)
     saveError.value = true
   }
 }
 
 // 自动保存
 const startAutoSave = () => {
-  // 每5分钟自动保存一次
   autoSaveInterval = setInterval(() => {
     if (dirtyChanges.value.length > 0) {
       saveChanges()
     }
-  }, 5 * 60 * 1000) // 5分钟
+  }, 5 * 60 * 1000)
 }
 
-// 停止自动保存
 const stopAutoSave = () => {
   if (autoSaveInterval) {
     clearInterval(autoSaveInterval)
@@ -322,19 +320,13 @@ const toggleDirectory = (node) => {
 
 // 键盘事件处理
 const handleKeydown = (event) => {
-  console.log('键盘事件:', event.key, '当前视图:', currentView.value)
-  
-  // ESC键返回文件树
   if (event.key === 'Escape' && currentView.value === 'table') {
-    console.log('ESC键触发，返回文件树')
     showFileTree()
     return
   }
   
-  // 只在表格视图中处理其他键盘事件
   if (currentView.value !== 'table') return
   
-  // 左右箭头键切换表格
   if (event.key === 'ArrowLeft') {
     event.preventDefault()
     prevTable()
@@ -348,30 +340,22 @@ const handleKeydown = (event) => {
   }
 }
 
-// 生命周期钩子
+// 生命周期
 onMounted(async () => {
-  console.log('App mounted, 初始化应用...')
   await loadConfig()
   await loadStructure()
   startAutoSave()
-  
-  // 添加键盘事件监听
   window.addEventListener('keydown', handleKeydown)
-  console.log('键盘事件监听已添加')
 })
 
 onUnmounted(() => {
   stopAutoSave()
-  
-  // 移除键盘事件监听
   window.removeEventListener('keydown', handleKeydown)
 })
 </script>
 
 <style scoped>
 :global(html) {
-  /* 强制垂直滚动条始终存在（或为其保留空间） */
-  /* 这可以防止因内容变化导致滚动条出现/消失而引起的页面抖动 */
   overflow-y: scroll;
 }
 
@@ -388,28 +372,61 @@ onUnmounted(() => {
 .content-area {
   flex: 1;
   width: 100%;
-  overflow: hidden; /* 关键修复：剪裁溢出的子元素 */
+  overflow: hidden;
   position: relative;
   background-color: transparent;
   display: flex;
   flex-direction: column;
 }
 
-.loading, .error, .empty {
+/* === 状态屏幕 (加载/错误/空) === */
+.status-screen {
   display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
   height: 100%;
-  font-size: 14px;
+  gap: 16px;
   padding: 20px;
 }
 
-.error {
-  color: #ff0000;
+.status-icon {
+  font-size: 32px;
+  color: var(--crt-text);
+  text-shadow: 0 0 8px var(--crt-glow-color);
 }
 
-.empty {
-  color: #888888;
+.status-text {
+  font-size: var(--crt-font-size-sm);
+  color: var(--crt-text);
+  text-shadow: 0 0 var(--crt-glow-strength) var(--crt-glow-color);
+  letter-spacing: 2px;
+}
+
+.status-hint {
+  font-size: var(--crt-font-size-xs);
+  color: var(--crt-text-dim);
+  margin-top: 8px;
+}
+
+.status-screen.error .status-icon {
+  color: #ff4444;
+  text-shadow: 0 0 8px rgba(255, 68, 68, 0.5);
+}
+
+.status-screen.error .status-text {
+  color: #ff4444;
+  text-shadow: 0 0 4px rgba(255, 68, 68, 0.5);
+}
+
+/* 光标闪烁效果 */
+.blink {
+  animation: cursor-blink 1s step-end infinite;
+}
+
+@keyframes cursor-blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0; }
 }
 
 .table-container {
@@ -425,6 +442,6 @@ onUnmounted(() => {
   overflow: auto;
   box-sizing: border-box;
   background-color: transparent;
-  padding: 20px;
+  padding: var(--crt-spacing-xl);
 }
 </style>

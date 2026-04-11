@@ -2,12 +2,27 @@
   "crt_effects": {
     "enabled": true,
     "distortion": {
-      "strength": 0.03,
-      "zoom": 1.01
+      "strength": 0.05,
+      "zoom": 1.02
+    },
+    "scanlines": {
+      "opacity": 0.3,
+      "spacing": 2
+    },
+    "shadow_mask": {
+      "enabled": true,
+      "opacity": 0.06
+    },
+    "vignette": {
+      "strength": 0.5
     },
     "glow": {
-      "strength": "0.5px",
-      "color": "rgba(255, 255, 255, 0.4)"
+      "strength": "1px",
+      "color": "rgba(255, 255, 255, 0.35)"
+    },
+    "flicker": {
+      "enabled": true,
+      "intensity": 0.03
     },
     "blur": {
       "strength": "0.3px"
@@ -15,7 +30,9 @@
   },
   "colors": {
     "text_default": "#FFFFFF",
-    "text_completed": "#888888",
-    "highlight_bg": "rgba(255, 255, 255, 0.1)"
+    "text_completed": "#555555",
+    "text_dim": "#888888",
+    "highlight_bg": "rgba(255, 255, 255, 0.08)",
+    "accent": "#00ff41"
   }
 }
