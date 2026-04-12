@@ -39,7 +39,7 @@
     // CRT电子束在边缘衰减导致的中心亮、边缘暗
     "vignette": {
       // 暗角强度 (0-1)，越大边缘越暗
-      "strength": 0.5
+      "strength": 0.4
     },
 
     // 荧光粉余晖 (Phosphor Glow)
@@ -57,7 +57,7 @@
       // 是否启用闪烁效果
       "enabled": true,
       // 闪烁强度 (0-0.1)，越大闪烁越明显
-      "intensity": 0.03
+      "intensity": 0.1
     },
 
     // 模糊 (Blur)
