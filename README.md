@@ -1,3 +1,5 @@
+# V2.0 重构前端 实现了更复杂的CRT效果
+
 # CRT File Manager
 
 一个拥有完整复古 CRT（阴极射线管）显示器效果的 Markdown 文件管理器 Web 应用。基于 [apple2js](https://github.com/nicgirault/apple2js) 项目的 CRT 效果分析文档，实现了包括桶形畸变、扫描线、荫罩、暗角、荧光粉余晖等多种真实 CRT 物理特性的视觉效果。
