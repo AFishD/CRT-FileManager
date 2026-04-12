@@ -46,9 +46,9 @@
     // 模拟CRT荧光粉发光的柔和光晕
     "glow": {
       // 光晕半径 (CSS单位)
-      "strength": "1px",
+      "strength": "5px",
       // 光晕颜色 (CSS颜色值)
-      "color": "rgba(255, 255, 255, 0.35)"
+      "color": "rgba(255, 255, 255, 0.8)"
     },
 
     // 屏幕闪烁 (Flicker)

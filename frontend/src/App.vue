@@ -58,7 +58,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import CRTEffect from './components/CRTEffect.vue'
 import HeaderBar from './components/HeaderBar.vue'
 import TableView from './components/TableView.vue'
@@ -182,6 +182,30 @@ const loadConfig = async () => {
     console.warn('Config load failed, using defaults')
   }
 }
+
+// 将配置值同步到 CSS 自定义属性，让所有子组件的 var() 引用自动更新
+const syncCSSVariables = (cfg) => {
+  const root = document.documentElement
+  const effects = cfg?.crt_effects || {}
+  const colors = cfg?.colors || {}
+  const glow = effects.glow || {}
+
+  // 光晕
+  root.style.setProperty('--crt-glow-strength', glow.strength || '1px')
+  root.style.setProperty('--crt-glow-color', glow.color || 'rgba(255, 255, 255, 0.35)')
+
+  // 颜色
+  if (colors.text_default) root.style.setProperty('--crt-text', colors.text_default)
+  if (colors.text_completed) root.style.setProperty('--crt-text-completed', colors.text_completed)
+  if (colors.text_dim) root.style.setProperty('--crt-text-dim', colors.text_dim)
+  if (colors.highlight_bg) root.style.setProperty('--crt-highlight', colors.highlight_bg)
+  if (colors.accent) root.style.setProperty('--crt-accent', colors.accent)
+}
+
+// 监听 config 变化，同步 CSS 变量
+watch(config, (newConfig) => {
+  syncCSSVariables(newConfig)
+}, { deep: true, immediate: true })
 
 // 加载数据结构
 const loadStructure = async () => {
