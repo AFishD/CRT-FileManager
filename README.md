@@ -22,7 +22,7 @@
 参考 WebGL Fragment Shader 中的径向畸变公式 `qb = barrel * qc * dot(qc, qc)`，使用 CSS `border-radius` + `mask` 的 `radial-gradient` 模拟 CRT 曲面玻璃和边缘视觉压缩。
 
 ### 2. 扫描线 (Scanlines)
-参考 `apple2.css` 中的 `.scanlines::after` 实现，使用 `repeating-linear-gradient` 创建每 2px 一组的明暗交替条纹，配合轻微的位移动画模拟 CRT 刷新。
+参考 `apple2.css` 中的 `.scanlines::after` 实现，使用 `repeating-linear-gradient` 创建可配置间距和不透明度的明暗交替条纹，静态覆盖在画面上方。
 
 ### 3. 荫罩 / 荧光粉点阵 (Shadow Mask)
 参考 Shader 中的 `shadowMask` 纹理采样，使用 RGB 三色条纹 `repeating-linear-gradient` 模拟彩色 CRT 的荧光粉点阵排布。
@@ -44,7 +44,7 @@
 | **前端** | Vue.js 3.3.8 (Composition API) + Vite 5.0.0 |
 | **部署** | Docker + Docker Compose (多阶段构建) |
 | **数据模型** | Pydantic 2.5.0 |
-| **字体** | Press Start 2P (Google Fonts) |
+| **字体** | Fusion Pixel 12px Monospaced (本地) |
 
 ## 🚀 快速开始
 
@@ -175,6 +175,11 @@ docker-compose restart
     // 模糊 - 荧光粉发光扩散
     "blur": {
       "strength": "0.3px" // 模糊半径
+    },
+
+    // 电源指示灯
+    "power_led": {
+      "enabled": true     // 是否显示
     }
   },
 
@@ -200,6 +205,7 @@ docker-compose restart
 | `glow.strength` | 荧光粉余晖半径 | CSS单位 |
 | `flicker.intensity` | 屏幕闪烁强度 | 0 - 0.1 |
 | `blur.strength` | 模糊半径 | CSS单位 |
+| `power_led.enabled` | 电源指示灯开关 | `true` / `false` |
 
 ## 📁 项目结构
 
@@ -241,7 +247,6 @@ CRT-FileManager/
 
 - [apple2js](https://github.com/nicgirault/apple2js) - Apple II 网页模拟器，CRT 效果参考来源
 - [screenEmu.js](https://github.com/nicgirault/apple2js/tree/master/submodules/apple2shader) - WebGL CRT 着色器实现
-- CRT 桶形畸变分析: `reference/apple2js/CRT_Barrel_Distortion_Analysis.md`
 
 ## License
 

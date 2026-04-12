@@ -27,7 +27,7 @@
     </div>
 
     <!-- 电源指示灯 -->
-    <div class="crt-power-led" :class="{ 'on': effectsEnabled }"></div>
+    <div v-if="powerLedEnabled" class="crt-power-led" :class="{ 'on': effectsEnabled }"></div>
   </div>
 </template>
 
@@ -55,6 +55,10 @@ const shadowMaskEnabled = computed(() => {
 
 const flickerEnabled = computed(() => {
   return crtConfig.value.flicker?.enabled ?? true;
+});
+
+const powerLedEnabled = computed(() => {
+  return crtConfig.value.power_led?.enabled ?? true;
 });
 
 // === 内容层样式：zoom + glow ===

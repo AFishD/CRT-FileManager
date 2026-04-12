@@ -65,6 +65,13 @@
     "blur": {
       // 模糊半径 (CSS单位)
       "strength": "0.3px"
+    },
+
+    // 电源指示灯 (Power LED)
+    // 屏幕右下角的绿色指示灯
+    "power_led": {
+      // 是否显示电源指示灯
+      "enabled": true
     }
   },
 

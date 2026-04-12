@@ -26,6 +26,9 @@
     },
     "blur": {
       "strength": "0.3px"
+    },
+    "power_led": {
+      "enabled": true
     }
   },
   "colors": {

@@ -94,7 +94,8 @@ DEFAULT_CONFIG = {
         "vignette": {"strength": 0.5},
         "glow": {"strength": "1px", "color": "rgba(255, 255, 255, 0.35)"},
         "flicker": {"enabled": True, "intensity": 0.03},
-        "blur": {"strength": "0.3px"}
+        "blur": {"strength": "0.3px"},
+        "power_led": {"enabled": True}
     },
     "colors": {
         "text_default": "#FFFFFF",
