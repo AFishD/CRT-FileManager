@@ -1,6 +1,6 @@
 {
   "crt_effects": {
-    "enabled": true,
+    "enabled": false,
     "distortion": {
       "strength": 0.05,
       "zoom": 1.02

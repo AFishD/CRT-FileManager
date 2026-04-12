@@ -13,6 +13,7 @@ services:
       - "80:80"
     volumes:
       - ./data:/app/data
+      - ./config:/app/config
     environment:
       - PYTHONUNBUFFERED=1
     restart: unless-stopped

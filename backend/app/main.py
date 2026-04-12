@@ -1,11 +1,25 @@
 import os
+import re
+import json
 import time
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import RedirectResponse
+from fastapi.responses import RedirectResponse, JSONResponse
 from .services import scan_directory, write_multiple_updates
 from .models import SaveRequest, SaveResponse
+
+
+def parse_jsonc(text: str) -> dict:
+    """
+    解析 JSONC (JSON with Comments) 格式
+    支持 // 单行注释和 /* */ 多行注释
+    """
+    # 移除单行注释 (// ...)
+    text = re.sub(r'//.*?(?=\n|$)', '', text)
+    # 移除多行注释 (/* ... */)
+    text = re.sub(r'/\*.*?\*/', '', text, flags=re.DOTALL)
+    return json.loads(text)
 
 # 创建FastAPI应用
 app = FastAPI(
@@ -63,6 +77,40 @@ print(f"DEBUG: 数据目录是否存在: {os.path.exists(DATA_DIR)}")
 os.makedirs(DATA_DIR, exist_ok=True)
 print(f"DEBUG: 数据目录确保存在: {os.path.exists(DATA_DIR)}")
 
+# 配置文件目录 - 通过Docker volume挂载，支持运行时修改
+CONFIG_DIR = "/app/config"
+CONFIG_FILE = os.path.join(CONFIG_DIR, "config.json")
+os.makedirs(CONFIG_DIR, exist_ok=True)
+print(f"DEBUG: 配置文件路径: {CONFIG_FILE}")
+print(f"DEBUG: 配置文件是否存在: {os.path.exists(CONFIG_FILE)}")
+
+# 默认配置（当config.json不存在时使用）
+DEFAULT_CONFIG = {
+    "crt_effects": {
+        "enabled": True,
+        "distortion": {"strength": 0.05, "zoom": 1.02},
+        "scanlines": {"opacity": 0.3, "spacing": 2},
+        "shadow_mask": {"enabled": True, "opacity": 0.06},
+        "vignette": {"strength": 0.5},
+        "glow": {"strength": "1px", "color": "rgba(255, 255, 255, 0.35)"},
+        "flicker": {"enabled": True, "intensity": 0.03},
+        "blur": {"strength": "0.3px"}
+    },
+    "colors": {
+        "text_default": "#FFFFFF",
+        "text_completed": "#555555",
+        "text_dim": "#888888",
+        "highlight_bg": "rgba(255, 255, 255, 0.08)",
+        "accent": "#00ff41"
+    }
+}
+
+# 如果配置文件不存在，写入默认配置
+if not os.path.exists(CONFIG_FILE):
+    print(f"INFO: 配置文件不存在，创建默认配置: {CONFIG_FILE}")
+    with open(CONFIG_FILE, 'w', encoding='utf-8') as f:
+        json.dump(DEFAULT_CONFIG, f, indent=2, ensure_ascii=False)
+
 # 添加请求日志中间件
 @app.middleware("http")
 async def log_requests(request: Request, call_next):
@@ -76,6 +124,29 @@ async def log_requests(request: Request, call_next):
     return response
 
 # 先定义API路由（在挂载静态文件之前）
+@app.get("/api/config")
+async def get_config():
+    """
+    获取前端配置（运行时从挂载卷读取，支持热更新）
+    每次请求都从磁盘读取，确保修改config.json后重启容器即可生效
+    """
+    print(f"DEBUG: API请求 /api/config")
+    try:
+        if os.path.exists(CONFIG_FILE):
+            with open(CONFIG_FILE, 'r', encoding='utf-8') as f:
+                config_data = parse_jsonc(f.read())
+            print(f"DEBUG: 配置文件读取成功")
+            return JSONResponse(content=config_data)
+        else:
+            print(f"WARN: 配置文件不存在，返回默认配置")
+            return JSONResponse(content=DEFAULT_CONFIG)
+    except json.JSONDecodeError as e:
+        print(f"ERROR: 配置文件JSON解析失败: {e}")
+        return JSONResponse(content=DEFAULT_CONFIG)
+    except Exception as e:
+        print(f"ERROR: 读取配置文件失败: {e}")
+        return JSONResponse(content=DEFAULT_CONFIG)
+
 @app.get("/api/structure")
 async def get_structure():
     """

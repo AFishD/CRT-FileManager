@@ -119,41 +119,100 @@ npm run dev
 
 ## ⚙️ 配置文件
 
-编辑 `frontend/public/config.json` 自定义 CRT 效果参数：
+配置文件位于 `config/config.json`，通过 Docker volume 挂载到容器中。**修改后只需重启容器即可生效，无需重新构建镜像。**
 
-```json
+支持 JSONC 格式（可使用 `//` 单行注释和 `/* */` 多行注释）。
+
+```bash
+# 修改配置后重启容器
+docker-compose restart
+```
+
+### 配置项说明
+
+```jsonc
 {
+  // CRT 显示器效果配置
   "crt_effects": {
+    // 总开关 - 设为 false 可完全关闭所有CRT效果
     "enabled": true,
-    "distortion": { "strength": 0.05, "zoom": 1.02 },
-    "scanlines": { "opacity": 0.3, "spacing": 2 },
-    "shadow_mask": { "enabled": true, "opacity": 0.06 },
-    "vignette": { "strength": 0.5 },
-    "glow": { "strength": "1px", "color": "rgba(255, 255, 255, 0.35)" },
-    "flicker": { "enabled": true, "intensity": 0.03 }
+
+    // 桶形畸变 - 模拟CRT曲面玻璃
+    "distortion": {
+      "strength": 0.05,   // 畸变强度 (0-0.2)
+      "zoom": 1.02        // 中心缩放比例 (1.0-1.1)
+    },
+
+    // 扫描线 - CRT逐行扫描的水平暗条纹
+    "scanlines": {
+      "opacity": 0.3,     // 不透明度 (0-1)
+      "spacing": 2        // 间距 (px)
+    },
+
+    // 荫罩 - RGB荧光粉点阵
+    "shadow_mask": {
+      "enabled": true,    // 是否启用
+      "opacity": 0.06     // 不透明度 (0-0.2)
+    },
+
+    // 暗角 - 中心亮、边缘暗
+    "vignette": {
+      "strength": 0.5     // 暗角强度 (0-1)
+    },
+
+    // 荧光粉余晖
+    "glow": {
+      "strength": "1px",                          // 光晕半径
+      "color": "rgba(255, 255, 255, 0.35)"        // 光晕颜色
+    },
+
+    // 屏幕闪烁
+    "flicker": {
+      "enabled": true,    // 是否启用
+      "intensity": 0.03   // 闪烁强度 (0-0.1)
+    },
+
+    // 模糊 - 荧光粉发光扩散
+    "blur": {
+      "strength": "0.3px" // 模糊半径
+    }
+  },
+
+  // 颜色配置
+  "colors": {
+    "text_default": "#FFFFFF",                     // 默认文字颜色
+    "text_completed": "#555555",                   // 已完成项颜色
+    "text_dim": "#888888",                         // 次要文字颜色
+    "highlight_bg": "rgba(255, 255, 255, 0.08)",   // 高亮行背景
+    "accent": "#00ff41"                            // 强调色
   }
 }
 ```
 
-| 参数 | 说明 |
-|------|------|
-| `distortion.zoom` | 桶形畸变中心缩放比例 |
-| `scanlines.opacity` | 扫描线透明度 (0-1) |
-| `shadow_mask.opacity` | RGB 荫罩透明度 |
-| `vignette.strength` | 暗角效果强度 |
-| `glow.strength` | 荧光粉余晖半径 |
-| `flicker.intensity` | 屏幕闪烁强度 |
+| 参数 | 说明 | 范围 |
+|------|------|------|
+| `crt_effects.enabled` | CRT效果总开关 | `true` / `false` |
+| `distortion.strength` | 桶形畸变强度 | 0 - 0.2 |
+| `distortion.zoom` | 中心缩放比例 | 1.0 - 1.1 |
+| `scanlines.opacity` | 扫描线透明度 | 0 - 1 |
+| `shadow_mask.opacity` | RGB荫罩透明度 | 0 - 0.2 |
+| `vignette.strength` | 暗角效果强度 | 0 - 1 |
+| `glow.strength` | 荧光粉余晖半径 | CSS单位 |
+| `flicker.intensity` | 屏幕闪烁强度 | 0 - 0.1 |
+| `blur.strength` | 模糊半径 | CSS单位 |
 
 ## 📁 项目结构
 
 ```
 CRT-FileManager/
 ├── docker-compose.yml          # Docker Compose 编排
+├── config/
+│   └── config.json             # CRT 效果配置 (JSONC, 挂载卷)
 ├── backend/
 │   ├── Dockerfile              # 多阶段构建 (Node.js + Python)
 │   ├── requirements.txt        # Python 依赖
 │   └── app/
-│       ├── main.py             # FastAPI 主入口
+│       ├── main.py             # FastAPI 主入口 + /api/config 端点
 │       ├── models/data.py      # Pydantic 数据模型
 │       └── services/
 │           ├── parser.py       # Markdown 解析服务
@@ -162,7 +221,7 @@ CRT-FileManager/
 │   ├── index.html              # 入口 HTML (CRT 启动画面)
 │   ├── package.json            # 前端依赖
 │   ├── vite.config.js          # Vite 配置
-│   ├── public/config.json      # CRT 效果配置
+│   ├── fonts/                  # Fusion Pixel 像素字体
 │   └── src/
 │       ├── main.js             # Vue 入口
 │       ├── App.vue             # 根组件

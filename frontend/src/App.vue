@@ -171,10 +171,10 @@ const buildFileTree = (files) => {
   return tree
 }
 
-// 加载配置文件
+// 加载配置文件（从后端API获取，支持运行时修改无需重建镜像）
 const loadConfig = async () => {
   try {
-    const response = await fetch('/config.json')
+    const response = await fetch('/api/config')
     if (response.ok) {
       config.value = await response.json()
     }
