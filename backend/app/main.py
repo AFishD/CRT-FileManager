@@ -37,6 +37,16 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# HTML 入口禁用缓存:前端重建后 bundle 文件名会变,若浏览器缓存了旧 index.html
+# 会一直加载旧资源甚至 404 白屏。带哈希的静态资源不受影响,仍可正常长缓存。
+@app.middleware("http")
+async def no_cache_html(request, call_next):
+    response = await call_next(request)
+    path = request.url.path
+    if path == "/" or path.endswith(".html"):
+        response.headers["Cache-Control"] = "no-cache"
+    return response
+
 # 配置静态文件目录（在生产环境中使用）
 # 在Docker容器中，前端构建产物在 /app/frontend/dist
 STATIC_DIR = "/app/frontend/dist"

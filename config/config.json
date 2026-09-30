@@ -10,11 +10,18 @@
 
     // 桶形畸变 (Barrel Distortion)
     // 模拟CRT曲面玻璃导致的图像边缘变形
+    // 由 WebGL 着色器实现,公式移植自 Mega Bezel 的 CRT-Pi 曲率
     "distortion": {
       // 畸变强度 (0-0.2)，越大边缘变形越明显
-      "strength": 0.05,
+      // 兼容字段: barrel_x / barrel_y 缺省时用它
+      "strength": 0.18,
+      // X / Y 方向独立畸变强度 (0-0.2)，缺省回退到 strength
+      "barrel_x": 0.02,
+      "barrel_y": 0.05,
       // 中心缩放比例 (1.0-1.1)，补偿畸变导致的边缘裁切
-      "zoom": 1.02
+      "zoom": 1.02,
+      // 屏幕四角圆角半径 (px)
+      "corner_radius": 16
     },
 
     // 扫描线 (Scanlines)
@@ -39,17 +46,22 @@
     // CRT电子束在边缘衰减导致的中心亮、边缘暗
     "vignette": {
       // 暗角强度 (0-1)，越大边缘越暗
-      "strength": 0.4
+      "strength": 0.25
     },
 
     // 荧光粉余晖 (Phosphor Glow)
     // 模拟CRT荧光粉发光的柔和光晕
     "glow": {
       // 光晕半径 (CSS单位)
-      "strength": "5px",
+      "strength": "1px",
       // 光晕颜色 (CSS颜色值)
       "color": "rgba(255, 255, 255, 0.8)"
     },
+
+    // 荧光粉余晖拖影 (Phosphor Persistence)
+    // 画面变化时旧亮点缓慢熄灭产生的拖影 (0-0.95)
+    // 0 = 关闭; 0.2-0.4 有轻微拖尾感
+    "persistence": 0.25,
 
     // 屏幕闪烁 (Flicker)
     // 模拟CRT电源不稳定导致的亮度微小波动
@@ -62,8 +74,8 @@
 
     // 模糊 (Blur)
     // 模拟CRT荧光粉发光的轻微扩散
+    // (已并入 glow 的着色器光晕,此字段仅作微调)
     "blur": {
-      // 模糊半径 (CSS单位)
       "strength": "0.3px"
     },
 
@@ -76,19 +88,55 @@
   },
 
   // ============================================
-  // 颜色配置
+  // 颜色配置 / 配色方案
+  // scheme 从 schemes 中选一套:default / green / orange
   // ============================================
 
   "colors": {
-    // 默认文字颜色
+    // 当前方案:default | green | orange
+    "scheme": "orange",
+
+    "schemes": {
+      // 经典白字绿强调(项目原配色)
+      "default": {
+        "text": "#FFFFFF",
+        "text_dim": "#888888",
+        "text_completed": "#555555",
+        "border": "#333333",
+        "accent": "#00ff41",
+        "highlight": "rgba(255, 255, 255, 0.08)",
+        "highlight_strong": "rgba(255, 255, 255, 0.15)",
+        "glow": "rgba(255, 255, 255, 0.35)"
+      },
+      // 磷光绿(P1/P3 类单色显像管):全绿单色,暗部用低饱和绿
+      "green": {
+        "text": "#42ff78",
+        "text_dim": "#2a9950",
+        "text_completed": "#1f5c38",
+        "border": "#1d6b38",
+        "accent": "#7dffa8",
+        "highlight": "rgba(80, 255, 140, 0.10)",
+        "highlight_strong": "rgba(80, 255, 140, 0.20)",
+        "glow": "rgba(90, 255, 150, 0.45)"
+      },
+      // EL 橙(琥珀色电致发光屏)
+      "orange": {
+        "text": "#ffb257",
+        "text_dim": "#b3763a",
+        "text_completed": "#6e4a25",
+        "border": "#6e4526",
+        "accent": "#ffd08a",
+        "highlight": "rgba(255, 170, 90, 0.10)",
+        "highlight_strong": "rgba(255, 170, 90, 0.20)",
+        "glow": "rgba(255, 180, 100, 0.45)"
+      }
+    },
+
+    // 旧版顶层字段(未选方案或方案缺字段时的回退)
     "text_default": "#FFFFFF",
-    // 已完成项目的文字颜色（划线状态）
     "text_completed": "#555555",
-    // 次要文字颜色（如表格计数、页码等）
     "text_dim": "#888888",
-    // 高亮行的背景颜色
     "highlight_bg": "rgba(255, 255, 255, 0.08)",
-    // 强调色（暂留用）
     "accent": "#00ff41"
   }
 }

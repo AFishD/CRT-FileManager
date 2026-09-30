@@ -2,27 +2,19 @@
   <div class="crt-monitor">
     <!-- CRT显示器外壳 -->
     <div class="crt-bezel">
-      <!-- CRT屏幕玻璃 -->
-      <div class="crt-screen" :class="{ 'crt-enabled': effectsEnabled }" :style="screenStyle">
-        <!-- 内容层 -->
-        <div class="crt-content" :style="contentStyle">
+      <!-- CRT屏幕玻璃:真实 DOM(可交互但不可见)+ WebGL 合成画面 -->
+      <div class="crt-screen" ref="screenRef">
+        <!-- 内容层:opacity:0 但仍参与命中测试,点击/滚轮/键盘全部有效 -->
+        <div
+          class="crt-content"
+          ref="contentRef"
+          :class="{ 'crt-hidden': hideContent }"
+        >
           <slot></slot>
         </div>
 
-        <!-- 扫描线层 -->
-        <div v-if="effectsEnabled" class="crt-scanlines" :style="scanlinesStyle"></div>
-
-        <!-- RGB荫罩层 -->
-        <div v-if="effectsEnabled && shadowMaskEnabled" class="crt-shadow-mask" :style="shadowMaskStyle"></div>
-
-        <!-- 暗角层 -->
-        <div v-if="effectsEnabled" class="crt-vignette" :style="vignetteStyle"></div>
-
-        <!-- 反光层 -->
-        <div v-if="effectsEnabled" class="crt-reflection"></div>
-
-        <!-- 闪烁层 -->
-        <div v-if="effectsEnabled && flickerEnabled" class="crt-flicker" :style="flickerStyle"></div>
+        <!-- WebGL 画面层:指针事件穿透到下面的真实 DOM -->
+        <canvas ref="canvasRef" class="crt-canvas" v-show="rendererActive"></canvas>
       </div>
     </div>
 
@@ -32,130 +24,419 @@
 </template>
 
 <script setup>
-import { computed } from 'vue';
+import { computed, ref, watch, onMounted, onBeforeUnmount, nextTick } from 'vue'
+import { prepareSnapshot, renderSnapshot } from '../crt/rasterizer.js'
+import { CRTRenderer } from '../crt/renderer.js'
 
 const props = defineProps({
   config: {
     type: Object,
     required: true
   }
-});
+})
 
-const effectsEnabled = computed(() => {
-  return props.config?.crt_effects?.enabled ?? true;
-});
+const screenRef = ref(null)
+const contentRef = ref(null)
+const canvasRef = ref(null)
 
-const crtConfig = computed(() => {
-  return props.config?.crt_effects ?? {};
-});
+const effectsEnabled = computed(() => props.config?.crt_effects?.enabled ?? true)
+const powerLedEnabled = computed(() => props.config?.crt_effects?.power_led?.enabled ?? true)
 
-const shadowMaskEnabled = computed(() => {
-  return crtConfig.value.shadow_mask?.enabled ?? true;
-});
+const rendererActive = ref(false)  // canvas 是否在显示
+const hideContent = ref(false)     // 真实 DOM 是否已隐藏(首帧成功后)
 
-const flickerEnabled = computed(() => {
-  return crtConfig.value.flicker?.enabled ?? true;
-});
+let renderer = null
+let workCanvas = null       // 栅格化专用离屏 canvas
+let rafId = 0
+let disposed = false
 
-const powerLedEnabled = computed(() => {
-  return crtConfig.value.power_led?.enabled ?? true;
-});
+// 快照调度
+let dirty = true           // 内容变化,需要重新栅格化
+let snapshotPending = false
+let lastSnapAt = 0
+let minSnapInterval = 66   // 自适应:按上次快照耗时动态放宽
 
-// === 内容层样式：zoom + glow ===
-const contentStyle = computed(() => {
-  if (!effectsEnabled.value) return {};
+let mutationObserver = null
+let resizeObserver = null
+let cssW = 0
+let cssH = 0
+let dpr = 1
+let dirtyUntil = 0   // 此时间点之前持续补拍快照(覆盖 CSS 过渡动画)
+let latestParams = { barrelX: 0.18, barrelY: 0.22, zoom: 1.02 }  // 供指针坐标反算
 
-  const glow = crtConfig.value.glow || {};
-  const distortion = crtConfig.value.distortion || {};
-  const blur = crtConfig.value.blur || {};
+// ── 指针坐标反算:屏幕坐标 → 内容坐标 ───────────────────────────────────────
+// 与 shaders.js 的顶点映射完全同构(zoom → crtPiCurve → 边缘补偿),
+// 视觉上内容被弯曲到哪里,点击就落到哪里 —— 命中区跟随桶形畸变
+function screenToContent(clientX, clientY) {
+  const canvas = canvasRef.value
+  if (!canvas) return null
+  const rect = canvas.getBoundingClientRect()
+  if (!rect.width || !rect.height) return null
+  const u = (clientX - rect.left) / rect.width
+  const v = (clientY - rect.top) / rect.height
+  const p = latestParams
+  const zoom = Math.max(p.zoom, 0.001)
+  const zx = (u - 0.5) / zoom + 0.5
+  const zy = (v - 0.5) / zoom + 0.5
 
-  const glowStrength = glow.strength || '1px';
-  const glowColor = glow.color || 'rgba(255, 255, 255, 0.35)';
-  const zoom = distortion.zoom ?? 1.02;
-  const blurStrength = blur.strength || '0.3px';
+  const curve = (x, y) => {
+    const kx = p.barrelX * 5
+    const ky = p.barrelY * 5
+    let a = x - 0.5
+    let b = y - 0.5
+    const rsq = a * a + b * b
+    a += a * (kx * rsq)
+    b += b * (ky * rsq)
+    a *= 1 - 0.23 * kx
+    b *= 1 - 0.23 * ky
+    return [a + 0.5, b + 0.5]
+  }
+  const [cx0, cy0] = curve(zx, zy)
+  const rightX = curve(1, 0.5)[0] - 0.5
+  const bottomY = curve(0.5, 1)[1] - 0.5
+  const cx = (cx0 - 0.5) * (0.5 / Math.max(Math.abs(rightX), 1e-5)) + 0.5
+  const cy = (cy0 - 0.5) * (0.5 / Math.max(Math.abs(bottomY), 1e-5)) + 0.5
+
+  if (cx < 0 || cx > 1 || cy < 0 || cy > 1) return null   // 玻璃边框黑区
+  return { x: rect.left + cx * rect.width, y: rect.top + cy * rect.height }
+}
+
+function contentTargetAt(clientX, clientY) {
+  const pt = screenToContent(clientX, clientY)
+  if (!pt) return null
+  // elementFromPoint 会命中最顶层的 canvas 自己 —— 查询瞬间
+  // 临时关掉 canvas 的命中测试,让它返回下方的内容元素
+  const canvas = canvasRef.value
+  const prevPE = canvas.style.pointerEvents
+  canvas.style.pointerEvents = 'none'
+  let el = null
+  try {
+    el = document.elementFromPoint(pt.x, pt.y)
+  } finally {
+    canvas.style.pointerEvents = prevPE
+  }
+  if (!el || !contentRef.value || !contentRef.value.contains(el)) return null
+
+  // 遮挡检测:滚动容器内、粘性表头底边之上的区域,内容被表头
+  // (或其 16px 覆盖阴影)挡住 —— box-shadow 只参与绘制不参与命中,
+  // 滚过表头的行在那里仍然可被 elementFromPoint 命中,
+  // 造成"看不见却能点到下方行"的泄漏,一律视为不可交互
+  const scrollHost = el.closest ? el.closest('.table-view') : null
+  if (scrollHost && scrollHost !== el) {
+    const th = scrollHost.querySelector('thead th')
+    if (th && !th.contains(el)) {
+      const thBottom = th.getBoundingClientRect().bottom
+      const hostTop = scrollHost.getBoundingClientRect().top
+      if (pt.y < thBottom && pt.y >= hostTop) return null
+    }
+  }
+  return el
+}
+
+// 悬停态显式标记(canvas 拦截后真实 DOM 不会进入 :hover,
+// 栅格化器会读取 __crt_hover 类,快照 CSS 也已把 :hover 改写成该类)
+let hoverChain = []
+function setHoverChain(target) {
+  const chain = []
+  let el = target
+  const root = contentRef.value
+  while (el && el !== root) { chain.push(el); el = el.parentElement }
+  for (const el of hoverChain) {
+    if (!chain.includes(el)) el.classList.remove('__crt_hover')
+  }
+  for (const el of chain) {
+    if (!hoverChain.includes(el)) el.classList.add('__crt_hover')
+  }
+  hoverChain = chain
+}
+
+function onCanvasPointerMove(e) {
+  let target = contentTargetAt(e.clientX, e.clientY)
+  // 表头是界面 chrome 而非内容:悬停表头不产生任何高亮。
+  // 否则表头与首行边界处,行背景随鼠标快速亮灭,视觉上
+  // 表头列分隔区域出现"部分显示/部分隐藏"的闪烁
+  if (target && target.closest && target.closest('thead')) target = null
+  setHoverChain(target)
+  if (canvasRef.value) {
+    canvasRef.value.style.cursor = target ? (getComputedStyle(target).cursor || 'default') : 'default'
+  }
+}
+
+function onCanvasPointerLeave() {
+  setHoverChain(null)
+  if (canvasRef.value) canvasRef.value.style.cursor = 'default'
+}
+
+function onCanvasClick(e) {
+  const target = contentTargetAt(e.clientX, e.clientY)
+  if (!target) return
+  target.dispatchEvent(new MouseEvent('click', {
+    bubbles: true, cancelable: true,
+    clientX: e.clientX, clientY: e.clientY
+  }))
+  // 合成事件不会触发浏览器原生聚焦,手动补
+  const focusable = target.closest('[tabindex],button,a,input,select,textarea')
+  if (focusable) focusable.focus({ preventScroll: true })
+}
+
+function onCanvasWheel(e) {
+  const target = contentTargetAt(e.clientX, e.clientY)
+  if (!target) return
+  const ev = new WheelEvent('wheel', {
+    bubbles: true, cancelable: true,
+    clientX: e.clientX, clientY: e.clientY,
+    deltaX: e.deltaX, deltaY: e.deltaY
+  })
+  const notPrevented = target.dispatchEvent(ev)
+  if (notPrevented) {
+    // 合成滚轮不会触发原生滚动:对没有自身处理器的可滚动祖先手动滚
+    let el = target
+    while (el && el !== document.body) {
+      if (el.scrollHeight > el.clientHeight + 1 || el.scrollWidth > el.clientWidth + 1) {
+        const cs = getComputedStyle(el)
+        if (/(auto|scroll)/.test(cs.overflowY + cs.overflow)) {
+          el.scrollTop += e.deltaY
+          el.scrollLeft += e.deltaX
+          break
+        }
+      }
+      el = el.parentElement
+    }
+  }
+}
+
+// ── 配置 → 渲染参数(兼容旧字段) ──────────────────────────────────────────
+function computeRendererParams() {
+  const e = props.config?.crt_effects ?? {}
+  const d = e.distortion ?? {}
+  const s = e.scanlines ?? {}
+  const m = e.shadow_mask ?? {}
+  const v = e.vignette ?? {}
+  const g = e.glow ?? {}
+  const f = e.flicker ?? {}
+  const blur = e.blur ?? {}
+
+  // barrel_x/barrel_y 是新字段;旧配置只有 distortion.strength(原遮罩收缩强度),
+  // 语义换算后继续当畸变强度用
+  const barrelFallback = d.strength ?? 0.12
+  const barrelX = d.barrel_x ?? barrelFallback
+  const barrelY = d.barrel_y ?? barrelFallback
+
+  const spacing = Math.max(1, s.spacing ?? 2)
+  const scanCount = Math.max(1, cssH / spacing)
+
+  // glow.strength 原本是给 CSS text-shadow 用的(那层已烘焙进快照),
+  // 着色器这层 bloom 只做补充,系数压低避免双重辉光过曝
+  const glowPx = parseFloat(g.strength) || 1
+  const blurPx = parseFloat(blur.strength) || 0
+  const glowAmount = Math.min(1, glowPx / 14 + blurPx / 8)
+
+  const cornerPx = d.corner_radius ?? 16
 
   return {
-    textShadow: `0 0 ${glowStrength} ${glowColor}`,
-    transform: `scale(${zoom})`,
-    filter: `blur(${blurStrength})`,
-  };
-});
+    barrelX: Math.max(0, Math.min(0.4, barrelX)),
+    barrelY: Math.max(0, Math.min(0.4, barrelY)),
+    zoom: d.zoom ?? 1.02,
+    scanOpacity: Math.max(0, Math.min(1, s.opacity ?? 0.3)),
+    scanCount,
+    maskOpacity: (m.enabled ?? true) ? Math.max(0, Math.min(1, m.opacity ?? 0.06)) : 0,
+    vignette: Math.max(0, Math.min(1, v.strength ?? 0.5)),
+    glow: glowAmount,
+    flicker: (f.enabled ?? true) ? Math.max(0, Math.min(0.5, f.intensity ?? 0.03)) : 0,
+    persistence: Math.max(0, Math.min(0.95, e.persistence ?? 0.25)),
+    corner: Math.max(0, Math.min(0.45, cornerPx / Math.max(1, cssH))),
+    cornerSharp: 600
+  }
+}
 
-// === 屏幕样式：mask 边缘渐隐受 distortion.strength 控制 ===
-const screenStyle = computed(() => {
-  if (!effectsEnabled.value) return {};
+function applyParams() {
+  if (!renderer) return
+  const params = computeRendererParams()
+  renderer.setParameters(params)
+  latestParams = { barrelX: params.barrelX, barrelY: params.barrelY, zoom: params.zoom }
+  // glow/闪烁等属于着色器效果,参数变化即时生效,无需重新栅格化
+}
 
-  const distortion = crtConfig.value.distortion || {};
-  const strength = distortion.strength ?? 0.05;
+function markDirty() {
+  dirty = true
+  // 覆盖 CSS 过渡动画期:渐隐/渐显这类动画不产生 DOM 变更,
+  // 若只在变更瞬间拍一帧,画面会冻结在动画起始帧
+  dirtyUntil = performance.now() + 1200
+}
 
-  // strength 越大，mask 椭圆越小，边缘裁切越多
-  const ellipseSize = Math.max(70, 98 - strength * 200); // 0.05 -> 88%, 0.2 -> 58%
-  const solidStop = Math.max(30, 70 - strength * 200);   // 中心实区
-  const borderRadius = Math.max(8, 10 + strength * 200);  // 圆角
+// ── 尺寸 ───────────────────────────────────────────────────────────────────
+function measure() {
+  const el = contentRef.value
+  if (!el) return false
+  const w = el.clientWidth
+  const h = el.clientHeight
+  if (!w || !h) return false
+  dpr = Math.min(window.devicePixelRatio || 1, 2)
+  if (w !== cssW || h !== cssH) {
+    cssW = w
+    cssH = h
+    if (renderer) renderer.resize(cssW, cssH, dpr)
+    applyParams()
+  }
+  return true
+}
 
-  return {
-    borderRadius: `${borderRadius}px`,
-    WebkitMask: `radial-gradient(ellipse ${ellipseSize}% ${ellipseSize}% at 50% 50%, black ${solidStop}%, rgba(0,0,0,0.8) ${solidStop + 15}%, rgba(0,0,0,0.3) ${solidStop + 25}%, transparent 100%)`,
-    mask: `radial-gradient(ellipse ${ellipseSize}% ${ellipseSize}% at 50% 50%, black ${solidStop}%, rgba(0,0,0,0.8) ${solidStop + 15}%, rgba(0,0,0,0.3) ${solidStop + 25}%, transparent 100%)`,
-  };
-});
+// ── 快照:DOM → 纹理 ───────────────────────────────────────────────────────
+async function takeSnapshot() {
+  if (!renderer || !contentRef.value) return
+  if (!measure()) return
 
-// === 扫描线样式：opacity + spacing ===
-const scanlinesStyle = computed(() => {
-  const scanlines = crtConfig.value.scanlines || {};
-  const opacity = scanlines.opacity ?? 0.3;
-  const spacing = scanlines.spacing ?? 2;
+  // prepareSnapshot 会短暂修改真实 DOM(打标记),期间暂停观察器避免自我触发
+  mutationObserver?.disconnect()
+  let prep
+  try {
+    prep = prepareSnapshot(contentRef.value)
+  } finally {
+    if (mutationObserver && !disposed) {
+      mutationObserver.observe(contentRef.value, { subtree: true, childList: true, attributes: true, characterData: true })
+    }
+  }
 
-  const halfSpacing = Math.floor(spacing / 2);
-  const lineWidth = spacing - halfSpacing;
+  const t0 = performance.now()
+  await renderSnapshot(prep, workCanvas)
+  const dur = performance.now() - t0
+  // 快照耗时自适应节流:交互期间尽量跟上,上限收紧以降低滚动迟滞
+  minSnapInterval = Math.max(50, Math.min(160, Math.round(dur * 1.1)))
 
-  return {
-    backgroundImage: `repeating-linear-gradient(to bottom, transparent 0, transparent ${halfSpacing}px, rgba(0,0,0,${opacity}) ${halfSpacing}px, rgba(0,0,0,${opacity}) ${spacing}px)`,
-    backgroundSize: `100% ${spacing}px`,
-  };
-});
+  renderer.uploadContent(workCanvas)
+  if (!hideContent.value) hideContent.value = true
+}
 
-// === 荫罩样式：opacity ===
-const shadowMaskStyle = computed(() => {
-  const shadowMask = crtConfig.value.shadow_mask || {};
-  const opacity = shadowMask.opacity ?? 0.06;
+// ── 主循环 ─────────────────────────────────────────────────────────────────
+function tick() {
+  if (disposed) return
+  rafId = requestAnimationFrame(tick)
 
-  return {
-    opacity: opacity,
-  };
-});
+  const now = performance.now()
+  if ((dirty || now < dirtyUntil) && !snapshotPending && now - lastSnapAt >= minSnapInterval) {
+    dirty = false
+    snapshotPending = true
+    lastSnapAt = now
+    takeSnapshot()
+      .catch((err) => {
+        const detail = err && (err.stack || (err.name + ': ' + err.message) || String(err))
+        console.warn('[CRT] snapshot failed, falling back to plain DOM:', detail)
+        degrade()
+      })
+      .finally(() => {
+        snapshotPending = false
+      })
+  }
 
-// === 暗角样式：strength ===
-const vignetteStyle = computed(() => {
-  const vignette = crtConfig.value.vignette || {};
-  const strength = vignette.strength ?? 0.5;
+  renderer?.render(now / 1000)
+}
 
-  const innerAlpha = 0.15 * strength;
-  const midAlpha = 0.5 * strength;
-  const outerAlpha = 0.85 * strength;
-  const shadowSize = Math.round(40 + 80 * strength);
-  const shadowBlur = Math.round(120 + 80 * strength);
-  const shadowAlpha = 0.5 * strength;
+// 降级:隐藏 WebGL,直接显示真实 DOM(无畸变)
+function degrade() {
+  rendererActive.value = false
+  hideContent.value = false
+  if (rafId) cancelAnimationFrame(rafId)
+  rafId = 0
+  teardownObservers()
+  renderer?.dispose()
+  renderer = null
+  if (canvasRef.value) canvasRef.value.style.display = 'none'
+}
 
-  return {
-    background: `radial-gradient(ellipse at center, transparent 50%, rgba(0,0,0,${innerAlpha}) 70%, rgba(0,0,0,${midAlpha}) 85%, rgba(0,0,0,${outerAlpha}) 100%)`,
-    boxShadow: `inset 0 0 ${shadowBlur}px ${shadowSize}px rgba(0,0,0,${shadowAlpha}), inset 0 0 30px 10px rgba(0,0,0,${shadowAlpha * 0.6})`,
-  };
-});
+function teardownObservers() {
+  mutationObserver?.disconnect()
+  mutationObserver = null
+  resizeObserver?.disconnect()
+  resizeObserver = null
+  window.removeEventListener('scroll', onScrollCapture, true)
+  window.removeEventListener('resize', markDirty)
+  window.removeEventListener('pointermove', markDirty)
+  if (canvasRef.value) {
+    canvasRef.value.removeEventListener('pointermove', onCanvasPointerMove)
+    canvasRef.value.removeEventListener('pointerleave', onCanvasPointerLeave)
+    canvasRef.value.removeEventListener('click', onCanvasClick)
+    canvasRef.value.removeEventListener('wheel', onCanvasWheel)
+  }
+  setHoverChain(null)
+}
 
-// === 闪烁样式：intensity 控制闪烁层的背景透明度 ===
-const flickerStyle = computed(() => {
-  const flicker = crtConfig.value.flicker || {};
-  const intensity = flicker.intensity ?? 0.03;
+function onScrollCapture() {
+  markDirty()
+}
 
-  // intensity 映射到闪烁层背景的不透明度
-  // 以及通过 CSS 自定义属性传递给动画
-  // intensity=0.03 -> 微弱闪烁, intensity=0.5 -> 剧烈闪烁
-  return {
-    '--flicker-intensity': intensity,
-    background: `rgba(18, 16, 16, ${Math.min(0.5, intensity * 3)})`,
-  };
-});
+// ── 生命周期 ───────────────────────────────────────────────────────────────
+function setup() {
+  try {
+    renderer = new CRTRenderer(canvasRef.value)
+  } catch (err) {
+    console.warn('[CRT] WebGL2 unavailable, plain DOM mode:', err)
+    return false
+  }
+
+  workCanvas = document.createElement('canvas')
+
+  measure()
+  renderer.resize(cssW || 1, cssH || 1, dpr)
+  applyParams()
+
+  mutationObserver = new MutationObserver(markDirty)
+  mutationObserver.observe(contentRef.value, { subtree: true, childList: true, attributes: true, characterData: true })
+
+  // scroll 事件不冒泡,capture 阶段在 window 上截获所有容器滚动
+  window.addEventListener('scroll', onScrollCapture, { capture: true, passive: true })
+  window.addEventListener('resize', markDirty)
+  // 悬停态是纯 CSS 伪类,不产生 DOM 变更;鼠标移动也要触发快照,
+  // 否则行悬停高亮只在滚动时才顺带刷新
+  window.addEventListener('pointermove', markDirty, { passive: true })
+
+  // 指针接管:canvas 截获全部指针事件,坐标经畸变反算后转发给
+  // 真实 DOM —— 命中区与视觉上的弯曲分区一致
+  if (canvasRef.value) {
+    canvasRef.value.addEventListener('pointermove', onCanvasPointerMove, { passive: true })
+    canvasRef.value.addEventListener('pointerleave', onCanvasPointerLeave)
+    canvasRef.value.addEventListener('click', onCanvasClick)
+    canvasRef.value.addEventListener('wheel', onCanvasWheel, { passive: true })
+  }
+
+  resizeObserver = new ResizeObserver(() => {
+    if (measure()) markDirty()
+  })
+  resizeObserver.observe(contentRef.value)
+
+  rendererActive.value = true
+  hideContent.value = true   // 开机黑屏,首帧快照完成后由 canvas 接管画面
+
+  dirty = true
+  rafId = requestAnimationFrame(tick)
+  return true
+}
+
+onMounted(async () => {
+  await nextTick()
+  if (!effectsEnabled.value) return
+  if (!setup()) {
+    hideContent.value = false
+  }
+})
+
+onBeforeUnmount(() => {
+  disposed = true
+  if (rafId) cancelAnimationFrame(rafId)
+  teardownObservers()
+  renderer?.dispose()
+  renderer = null
+})
+
+// 配置热更新(API 拉到 / 用户改配置):参数即时下发;内容层样式
+// (text-shadow 等)变了也要重新栅格化
+watch(() => props.config, () => {
+  applyParams()
+  markDirty()
+}, { deep: true })
+
+watch(effectsEnabled, (on) => {
+  if (!on && renderer) degrade()
+})
 </script>
 
 <style scoped>
@@ -196,129 +477,28 @@ const flickerStyle = computed(() => {
   background: #000000;
 }
 
-/* === 内容层 === */
+/* === 内容层:不可见但可交互 === */
 .crt-content {
   width: 100%;
   height: 100%;
   position: relative;
   z-index: 1;
-  transform-origin: center center;
+  user-select: none;
 }
 
-/* === 扫描线 === */
-.crt-scanlines {
+.crt-content.crt-hidden {
+  opacity: 0;
+}
+
+/* === WebGL 画面层:接管指针事件,坐标经畸变反算后转发给真实 DOM === */
+.crt-canvas {
   position: absolute;
   top: 0;
   left: 0;
   width: 100%;
   height: 100%;
   z-index: 2;
-  pointer-events: none;
-  /* 扫描线是静态的，不做位移动画 */
-}
-
-/* === RGB荫罩 === */
-.crt-shadow-mask {
-  position: absolute;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
-  z-index: 3;
-  pointer-events: none;
-  background-image: repeating-linear-gradient(
-    to right,
-    rgba(255, 0, 0, 1) 0px,
-    rgba(255, 0, 0, 1) 1px,
-    rgba(0, 255, 0, 1) 1px,
-    rgba(0, 255, 0, 1) 2px,
-    rgba(0, 0, 255, 1) 2px,
-    rgba(0, 0, 255, 1) 3px
-  );
-  background-size: 3px 100%;
-  /* opacity 通过 inline style 动态控制 */
-}
-
-/* === 暗角 === */
-.crt-vignette {
-  position: absolute;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
-  z-index: 4;
-  pointer-events: none;
-  border-radius: 18px;
-  /* background + box-shadow 通过 inline style 动态控制 */
-}
-
-/* === 反光 === */
-.crt-reflection {
-  position: absolute;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
-  z-index: 5;
-  pointer-events: none;
-  border-radius: 18px;
-  background: linear-gradient(
-    135deg,
-    rgba(255, 255, 255, 0.04) 0%,
-    rgba(255, 255, 255, 0.01) 30%,
-    transparent 50%,
-    transparent 100%
-  );
-}
-
-/* === 闪烁 === */
-/*
- * 闪烁效果通过 CSS 自定义属性 --flicker-intensity 控制强度
- * background 也通过 inline style 动态设置
- *
- * intensity=0.03 -> 几乎不可见的微弱闪烁
- * intensity=0.1  -> 明显可见的闪烁
- * intensity=0.5  -> 剧烈闪烁（模拟老旧CRT）
- */
-.crt-flicker {
-  position: absolute;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
-  z-index: 6;
-  pointer-events: none;
-  /* background 通过 inline style 设置，受 intensity 控制 */
-  opacity: 0;
-  animation: crt-flicker 0.15s infinite;
-}
-
-/*
- * 闪烁动画：随机的 opacity 波动
- * opacity 值已归一化到 0-1 范围，实际效果由 background 的 alpha 通道控制
- */
-@keyframes crt-flicker {
-  0% { opacity: 0.9; }
-  5% { opacity: 1.0; }
-  10% { opacity: 0.8; }
-  15% { opacity: 1.0; }
-  20% { opacity: 0.6; }
-  25% { opacity: 1.0; }
-  30% { opacity: 0.9; }
-  35% { opacity: 1.0; }
-  40% { opacity: 0.7; }
-  45% { opacity: 1.0; }
-  50% { opacity: 0.95; }
-  55% { opacity: 0.3; }
-  60% { opacity: 0.7; }
-  65% { opacity: 1.0; }
-  70% { opacity: 0.9; }
-  75% { opacity: 0.6; }
-  80% { opacity: 1.0; }
-  85% { opacity: 0.95; }
-  90% { opacity: 1.0; }
-  95% { opacity: 0.6; }
-  100% { opacity: 0.8; }
+  pointer-events: auto;
 }
 
 /* === 电源指示灯 === */

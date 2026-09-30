@@ -1,42 +1,43 @@
-# V2.0 重构前端 实现了更复杂的CRT效果
+# V3.0 WebGL CRT 管线 — 真·桶形畸变
 
 # CRT File Manager
 
-一个拥有完整复古 CRT（阴极射线管）显示器效果的 Markdown 文件管理器 Web 应用。基于 [apple2js](https://github.com/nicgirault/apple2js) 项目的 CRT 效果分析文档，实现了包括桶形畸变、扫描线、荫罩、暗角、荧光粉余晖等多种真实 CRT 物理特性的视觉效果。
+一个拥有完整复古 CRT（阴极射线管）显示器效果的 Markdown 文件管理器 Web 应用。V3.0 起将 CRT 效果从 CSS 叠加层升级为 **WebGL2 实时渲染管线**:真实 DOM 被栅格化为纹理,经移植自 [Mega Bezel](https://github.com/HyperspaceMadness/Mega_Bezel)(RetroArch 着色器包)的 CRT-Pi 曲率公式渲染,实现真正的桶形畸变——扫描线、荫罩、暗角全部作用在弯曲后的坐标上,像真实曲面玻璃一样随屏幕弯曲。
 
 ## ✨ 功能特性
 
-- 🖥️ **完整 CRT 效果**: 桶形畸变、扫描线、RGB 荫罩、暗角、荧光粉余晖、屏幕闪烁、玻璃反光
+- 🖥️ **真·桶形畸变 (WebGL)**: Mega Bezel CRT-Pi 曲率 + 边缘补偿公式,四角削圆、边缘外鼓
 - 📁 **智能文件扫描**: 递归扫描本地 Markdown 文件，自动解析表格数据
 - ✅ **自动进度管理**: 智能检测并自动添加"进度"列，支持 `[ ]` / `[x]` 状态切换
 - 🎮 **完整键盘导航**: 方向键移动、空格/回车切换、ESC 返回
-- 🖱️ **鼠标交互**: 点击切换、悬停高亮、滚轮滚动
+- 🖱️ **鼠标交互**: 点击切换、悬停高亮、滚轮滚动(交互层与显示层分离,操作无损耗)
 - 💾 **双模式保存**: 5 分钟自动保存 + 手动保存
 - 🐳 **Docker 容器化**: 一键部署，多阶段构建
 - 📊 **智能表格布局**: 自适应列宽、跑马灯溢出、分隔行识别
 - 🌳 **树形文件浏览**: 递归目录结构，CRT 风格终端界面
 
-## 🖥️ CRT 效果实现
+## 🖥️ CRT 效果架构 (V3.0)
 
-基于 `reference/apple2js/CRT_Barrel_Distortion_Analysis.md` 分析文档，前端实现了以下 CRT 物理特性：
+前端渲染分两层,由 `frontend/src/crt/` 驱动:
 
-### 1. 桶形畸变 (Barrel Distortion)
-参考 WebGL Fragment Shader 中的径向畸变公式 `qb = barrel * qc * dot(qc, qc)`，使用 CSS `border-radius` + `mask` 的 `radial-gradient` 模拟 CRT 曲面玻璃和边缘视觉压缩。
+```
+┌─ 真实 DOM (.crt-content, opacity:0)  ← 承接全部点击/滚轮/键盘,保持交互
+│     ↓ MutationObserver / scroll / resize 触发 (节流)
+├─ 栅格化 rasterizer.js                ← SVG foreignObject 拍成 canvas 纹理
+│     · 字体按 unicode-range 内联为 data URL(CJK 字体按需,避免全量 3.5MB)
+│     · 滚动容器平移补偿 + 粘性表头"占位符+绝对定位"钉住
+│     · :hover/:focus 改写为类选择器,快照保留交互态
+├─ WebGL2 渲染 renderer.js + shaders.js
+│     · 桶形畸变: HSM_GetCrtPiCurvedCoord + HSM_Get2DCurvedCoord(边缘补偿)
+│     · 圆角遮罩: HSM_GetCornerMask 距离场
+│     · 扫描线/荫罩/暗角/辉光(bloom)/闪烁 全部在弯曲坐标上计算
+│     · 荧光粉余晖: FBO 双缓冲,与上一帧取 max 实现亮点拖尾
+└─ canvas (pointer-events:none)        ← 用户看到的画面
+```
 
-### 2. 扫描线 (Scanlines)
-参考 `apple2.css` 中的 `.scanlines::after` 实现，使用 `repeating-linear-gradient` 创建可配置间距和不透明度的明暗交替条纹，静态覆盖在画面上方。
-
-### 3. 荫罩 / 荧光粉点阵 (Shadow Mask)
-参考 Shader 中的 `shadowMask` 纹理采样，使用 RGB 三色条纹 `repeating-linear-gradient` 模拟彩色 CRT 的荧光粉点阵排布。
-
-### 4. 暗角效果 (Vignetting)
-参考 Shader 中的 `exp(-dot(lighting, lighting))` 指数衰减公式，使用多层 `radial-gradient` + `box-shadow` 模拟中心亮边缘暗的物理特性。
-
-### 5. 荧光粉余晖 (Phosphor Persistence)
-通过 CSS `text-shadow` 为所有文字添加微弱发光效果，模拟荧光粉尚未完全熄灭的视觉感受。
-
-### 6. 屏幕闪烁 (Flicker)
-使用 CSS `opacity` 关键帧动画模拟 CRT 电源和电子束稳定性不足导致的亮度波动。
+- **降级策略**: 无 WebGL2 或快照失败时自动回退为直接显示 DOM(无畸变)
+- **浏览器要求**: Chromium / Firefox(Safari 的 foreignObject 渲染不完整,会走降级路径)
+- **配置**: 全部参数在 `config/config.json` 的 `crt_effects` 段,新增 `barrel_x`/`barrel_y`(畸变强度)、`corner_radius`(圆角)、`persistence`(余晖拖影);旧字段全部兼容
 
 ## 技术栈
 

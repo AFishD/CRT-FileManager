@@ -68,13 +68,14 @@ import FileTree from './components/FileTree.vue'
 const config = ref({
   crt_effects: {
     enabled: true,
-    distortion: { strength: 0.05, zoom: 1.02 },
+    distortion: { strength: 0.18, barrel_x: 0.18, barrel_y: 0.22, zoom: 1.02, corner_radius: 16 },
     scanlines: { opacity: 0.3, spacing: 2 },
     shadow_mask: { enabled: true, opacity: 0.06 },
-    vignette: { strength: 0.5 },
+    vignette: { strength: 0.25 },
     glow: { strength: '1px', color: 'rgba(255, 255, 255, 0.35)' },
     flicker: { enabled: true, intensity: 0.03 },
-    blur: { strength: '0.3px' }
+    blur: { strength: '0.3px' },
+    persistence: 0.25
   },
   colors: {
     text_default: '#FFFFFF',
@@ -172,9 +173,10 @@ const buildFileTree = (files) => {
 }
 
 // 加载配置文件（从后端API获取，支持运行时修改无需重建镜像）
+// no-store: config.json 会被外部编辑,必须绕过浏览器缓存拿最新值
 const loadConfig = async () => {
   try {
-    const response = await fetch('/api/config')
+    const response = await fetch('/api/config', { cache: 'no-store' })
     if (response.ok) {
       config.value = await response.json()
     }
@@ -183,23 +185,56 @@ const loadConfig = async () => {
   }
 }
 
-// 将配置值同步到 CSS 自定义属性，让所有子组件的 var() 引用自动更新
+// 将配置值同步到 CSS 自定义属性，让所有子组件的 var() 引用自动更新。
+// 支持配色方案:colors.scheme 选中 colors.schemes 中的命名方案,
+// 方案字段优先,缺省回退到旧版顶层字段(colors.text_default 等)
 const syncCSSVariables = (cfg) => {
   const root = document.documentElement
   const effects = cfg?.crt_effects || {}
   const colors = cfg?.colors || {}
   const glow = effects.glow || {}
+  const schemes = colors.schemes || {}
+  const active = schemes[colors.scheme] || {}
 
-  // 光晕
+  // 光晕强度
   root.style.setProperty('--crt-glow-strength', glow.strength || '1px')
-  root.style.setProperty('--crt-glow-color', glow.color || 'rgba(255, 255, 255, 0.35)')
 
-  // 颜色
-  if (colors.text_default) root.style.setProperty('--crt-text', colors.text_default)
-  if (colors.text_completed) root.style.setProperty('--crt-text-completed', colors.text_completed)
-  if (colors.text_dim) root.style.setProperty('--crt-text-dim', colors.text_dim)
-  if (colors.highlight_bg) root.style.setProperty('--crt-highlight', colors.highlight_bg)
-  if (colors.accent) root.style.setProperty('--crt-accent', colors.accent)
+  // 颜色:选中方案 → 旧版顶层字段 → 不设置(沿用 CSS 默认)
+  const vars = {
+    '--crt-text': active.text ?? colors.text_default,
+    '--crt-text-dim': active.text_dim ?? colors.text_dim,
+    '--crt-text-completed': active.text_completed ?? colors.text_completed,
+    '--crt-border': active.border,
+    '--crt-accent': active.accent ?? colors.accent,
+    '--crt-highlight': active.highlight ?? colors.highlight_bg,
+    '--crt-highlight-strong': active.highlight_strong,
+    '--crt-glow-color': active.glow ?? glow.color ?? 'rgba(255, 255, 255, 0.35)'
+  }
+  for (const [name, value] of Object.entries(vars)) {
+    if (value) root.style.setProperty(name, value)
+  }
+
+  // 选中行"荧光"颜色:从方案 highlight_strong(回退 accent)解析
+  // RGB 三元组与基准透明度 —— 供 TableView 的 --sel-alpha 渐隐公式使用,
+  // 否则选中行永远是无视配色方案的白色
+  const parseColor = (v) => {
+    if (!v) return null
+    let m = /^#([0-9a-f]{6})$/i.exec(v.trim())
+    if (m) {
+      const n = parseInt(m[1], 16)
+      return { rgb: [(n >> 16) & 255, (n >> 8) & 255, n & 255], a: 1 }
+    }
+    m = /rgba?\(\s*([\d.]+)[,\s]+([\d.]+)[,\s]+([\d.]+)(?:[,\s/]+([\d.]+))?\s*\)/.exec(v)
+    if (m) {
+      return { rgb: [+m[1], +m[2], +m[3]], a: m[4] !== undefined ? +m[4] : 1 }
+    }
+    return null
+  }
+  const sel = parseColor(active.highlight_strong) || parseColor(active.accent) || parseColor(colors.accent)
+  if (sel) {
+    root.style.setProperty('--crt-select-rgb', sel.rgb.join(','))
+    root.style.setProperty('--crt-select-max', String(sel.a))
+  }
 }
 
 // 监听 config 变化，同步 CSS 变量
@@ -379,8 +414,10 @@ onUnmounted(() => {
 </script>
 
 <style scoped>
+/* 页面级不滚动:应用是全屏固定布局,html 的常显滚动槽会露在
+   CRT 画面边缘(右侧竖条 + 100vw 溢出挤出的底部横条) */
 :global(html) {
-  overflow-y: scroll;
+  overflow: hidden;
 }
 
 .app-container {
@@ -467,5 +504,12 @@ onUnmounted(() => {
   box-sizing: border-box;
   background-color: transparent;
   padding: var(--crt-spacing-xl);
+  /* 隐藏滚动条但保留滚动能力(滚轮/键盘),画面统一交给 CRT 快照 */
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.file-tree-container::-webkit-scrollbar {
+  display: none;
 }
 </style>

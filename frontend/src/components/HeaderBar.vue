@@ -62,9 +62,21 @@ const hasNext = computed(() => props.currentTableIndex < props.totalTables - 1)
   align-items: center;
   padding: var(--crt-spacing-md) var(--crt-spacing-xl);
   background: rgba(0, 0, 0, 0.9);
-  border-bottom: 1px solid var(--crt-border);
   min-height: 48px;
   flex-shrink: 0;
+  position: relative;
+}
+
+/* 下边线与列表列宽同宽(左右内缩一个横向 padding)而不是通栏 ——
+   与表格竖线网格对齐,同处一个虚拟 CRT 屏内 */
+.header-bar::after {
+  content: '';
+  position: absolute;
+  left: var(--crt-spacing-xl);
+  right: var(--crt-spacing-xl);
+  bottom: 0;
+  height: 1px;
+  background: var(--crt-border);
   /* 荧光粉余晖 */
   box-shadow: 0 1px 0 rgba(255, 255, 255, 0.05);
 }
