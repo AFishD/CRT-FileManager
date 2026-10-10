@@ -25,8 +25,6 @@
         </span>
       </div>
     </div>
-
-    <div class="list-hint">↑↓ 选择 · ENTER 切换 · ESC 返回</div>
   </div>
 </template>
 
@@ -214,14 +212,5 @@ onUnmounted(() => {
   font-size: var(--crt-font-size-xs);
   color: var(--crt-text-dim);
   flex-shrink: 0;
-}
-
-.list-hint {
-  margin-top: var(--crt-spacing-md);
-  padding-top: var(--crt-spacing-sm);
-  border-top: 1px solid var(--crt-border);
-  font-size: var(--crt-font-size-xs);
-  color: var(--crt-text-dim);
-  letter-spacing: 1px;
 }
 </style>

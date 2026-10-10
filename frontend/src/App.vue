@@ -61,6 +61,13 @@
             @update="handleTableUpdate"
           />
         </div>
+        
+        <!-- 列表类视图的底部横线:绝对定位钉在页面底部,与表格页的下边框同一条线
+             (表格页的那条线由 TableView 画在自身滚动区之后) -->
+        <div
+          v-if="currentView === 'file-tree' || currentView === 'table-list'"
+          class="content-bottom-line"
+        ></div>
       </div>
       
       <div v-if="saveError" class="error-notification">
@@ -481,9 +488,14 @@ onUnmounted(() => {
   overflow: hidden;
 }
 
+/* 高度用 100% 而不是 100vh:
+   1) 100vh 是窗口高度,比 CRT 屏幕(.crt-content)高 24px(上下边框),多出来的
+      部分被 .crt-screen 的 overflow:hidden 裁掉 —— 底部元素会被切;
+   2) CRT 快照里 vh 会被换算成 .crt-content 的高度,和 100% 等价,
+      用 100% 才能让真实 DOM 与快照布局完全一致(点击命中区也跟着对齐) */
 .app-container {
   width: 100%;
-  height: 100vh;
+  height: 100%;
   display: flex;
   flex-direction: column;
   box-sizing: border-box;
@@ -560,7 +572,8 @@ onUnmounted(() => {
 
 .file-tree-container {
   width: 100%;
-  height: 100%;
+  /* 止于底部横线:内容不会滚到横线以下 */
+  height: calc(100% - var(--crt-frame-bottom));
   overflow: auto;
   box-sizing: border-box;
   background-color: transparent;
@@ -572,5 +585,17 @@ onUnmounted(() => {
 
 .file-tree-container::-webkit-scrollbar {
   display: none;
+}
+
+/* 文件树/表格列表的下边框:钉在底部(不随内容滚动),
+   与表格页 TableView 画的那条线同高同宽 */
+.content-bottom-line {
+  position: absolute;
+  left: var(--crt-spacing-xl);
+  right: var(--crt-spacing-xl);
+  bottom: var(--crt-frame-bottom);
+  height: 1px;
+  background: var(--crt-border);
+  pointer-events: none;
 }
 </style>

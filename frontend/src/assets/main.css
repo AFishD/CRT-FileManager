@@ -82,6 +82,10 @@
   --crt-spacing-lg: 16px;
   --crt-spacing-xl: 20px;
   --crt-spacing-xxl: 24px;
+
+  /* 页面底部横线距离内容区底边的距离(表格页/表格列表页/文件树页共用,
+     保证三个视图的下边框在同一条水平线上) */
+  --crt-frame-bottom: 16px;
 }
 
 /* === 基础重置 === */

@@ -53,6 +53,9 @@
         :style="{ height: emptyFillHeight + 'px' }"
       ></div>
     </div>
+    <!-- 吸收"已拟合整行"与容器底部之间的空隙,并补上左右边框,
+         让表格框架一直连到底部横线(横线因此固定在页面底部,不随内容浮动) -->
+    <div class="table-frame-fill" v-show="fittedHeight > 0"></div>
     <!-- 底部横线:普通文档流元素(紧跟滚动区之后)。
          不用绝对定位 —— foreignObject 快照的全新布局中,绝对定位
          相对 vh 替换后的 flex 祖先会漂移 ~20px,导致线压到末行上 -->
@@ -483,17 +486,32 @@ const handleKeydown = (event) => {
   flex-grow: 1;
   height: 100%;
   width: 100%;
-  padding-bottom: 36px;
+  padding-bottom: var(--crt-frame-bottom);
   box-sizing: border-box;
   position: relative;
+  /* 纵向 flex:滚动区(已拟合整行) + 空隙填充 + 底部横线,
+     横线被推到容器内容区底边 —— 与文件树/表格列表页的横线同一条线 */
+  display: flex;
+  flex-direction: column;
 }
 
 /* 底部横线:文档流块元素,天然紧贴滚动区底边(滚动区高度已拟合,
    线就在最后一个完整行下方);左右 margin 与列表列宽对齐 */
 .table-bottom-line {
+  flex: none;
   height: 1px;
   margin: 0 var(--crt-spacing-xl);
   background: var(--crt-border);
+}
+
+/* 拟合留下的空隙:左右边框与列网格同宽,内部无分隔线 */
+.table-frame-fill {
+  flex: 1 1 auto;
+  min-height: 0;
+  margin: 0 var(--crt-spacing-xl);
+  border-left: 1px solid var(--crt-border);
+  border-right: 1px solid var(--crt-border);
+  box-sizing: border-box;
 }
 
 /* 不足一页的表格:末行与底线之间的空隙,以"空行"呈现 ——
@@ -505,6 +523,7 @@ const handleKeydown = (event) => {
 }
 
 .table-view {
+  flex: none;
   height: 100%;
   width: 100%;
   overflow-y: auto;
