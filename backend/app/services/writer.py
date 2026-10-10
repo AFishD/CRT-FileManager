@@ -3,6 +3,7 @@ import re
 from typing import List, Dict, Any, Optional
 from collections import defaultdict
 from ..models import TableUpdate
+from .table_format import format_markdown_tables, detect_eol_style, to_lf
 
 def write_multiple_updates(updates: List[TableUpdate], root_dir: str) -> Dict[str, Any]:
     """
@@ -22,9 +23,13 @@ def write_multiple_updates(updates: List[TableUpdate], root_dir: str) -> Dict[st
     for file_path_rel, file_updates in updates_by_file.items():
         try:
             file_path_abs = os.path.join(root_dir, file_path_rel)
-            with open(file_path_abs, 'r', encoding='utf-8') as f:
-                current_content = f.read()
-            
+            # newline='' 不做平台换行转换:换行风格由文件自身决定,处理完原样还回去
+            with open(file_path_abs, 'r', encoding='utf-8', newline='') as f:
+                raw_content = f.read()
+
+            eol = detect_eol_style(raw_content)
+            current_content = to_lf(raw_content)
+
             update_lookup = {up.tableIndex: up.newRows for up in file_updates}
             
             # 我们需要动态地查找表格，因为每次更新都会改变内容和表格位置
@@ -39,7 +44,15 @@ def write_multiple_updates(updates: List[TableUpdate], root_dir: str) -> Dict[st
                 current_content = update_table_in_content(current_content, i, rows_to_update)
                 i += 1
 
-            with open(file_path_abs, 'w', encoding='utf-8') as f:
+            # 表格整形:按显示宽度(CJK 占 2 列)补空格,让本地 Markdown 查看器里
+            # 所有 '|' 竖直对齐,并把分隔行统一成 '| --- |' 形式。
+            # 补进度列与整形同属"保存时规范化",放在这里一次性完成整个文件
+            current_content = format_markdown_tables(current_content)
+
+            if eol != '\n':
+                current_content = current_content.replace('\n', eol)
+
+            with open(file_path_abs, 'w', encoding='utf-8', newline='') as f:
                 f.write(current_content)
             
             results['updated_files'].append(file_path_rel)
@@ -163,13 +176,17 @@ def write_updates_to_file(update_data: TableUpdate, root_dir: str) -> bool:
     file_path = os.path.join(root_dir, update_data.filePath)
     if not os.path.exists(file_path):
         raise Exception(f"文件不存在: {file_path}")
-    with open(file_path, 'r', encoding='utf-8') as f:
-        original_content = f.read()
+    with open(file_path, 'r', encoding='utf-8', newline='') as f:
+        raw_content = f.read()
+    eol = detect_eol_style(raw_content)
     updated_content = update_table_in_content(
-        original_content, 
+        to_lf(raw_content),
         update_data.tableIndex, 
         update_data.newRows
     )
-    with open(file_path, 'w', encoding='utf-8') as f:
+    updated_content = format_markdown_tables(updated_content)
+    if eol != '\n':
+        updated_content = updated_content.replace('\n', eol)
+    with open(file_path, 'w', encoding='utf-8', newline='') as f:
         f.write(updated_content)
     return True
