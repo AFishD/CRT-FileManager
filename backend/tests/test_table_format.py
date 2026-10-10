@@ -83,7 +83,7 @@ class AlignTableTest(unittest.TestCase):
         expected = (
             '| 序号 | 收藏品名称               | 所属版本     | 进度 |\n'
             '| ---- | ------------------------ | ------------ | ---- |\n'
-            '| 1    | 希斯特工                 | 游戏本体     | [x]  |\n'
+            '| 01   | 希斯特工                 | 游戏本体     | [x]  |\n'
             '| 10   | 希斯特别行动队（空降兵） | 扩展包2：AWE | [ ]  |\n'
         )
         self.assertEqual(tf.format_markdown_tables(self.SOURCE), expected)
@@ -114,10 +114,11 @@ class AlignTableTest(unittest.TestCase):
         self.assertIn('| [ ]  |', out[3])
 
     def test_content_preserved(self):
-        src = [c for l in self.SOURCE.splitlines() for c in cells_of(l)[:-0]]
         out = tf.format_markdown_tables(self.SOURCE).splitlines()
-        got = [c for l in out for c in cells_of(l)]
-        for cell in src:
+        got = [c for line in out for c in cells_of(line)]
+        for cell in ['序号', '收藏品名称', '所属版本', '进度', '希斯特工', '游戏本体',
+                     '希斯特别行动队（空降兵）', '扩展包2：AWE', '[x]', '[ ]',
+                     '01', '10']:   # 1 被补成 01
             self.assertIn(cell, got)
         self.assertEqual(len(out), 4)
 
@@ -235,6 +236,81 @@ class EolStyleTest(unittest.TestCase):
         self.assertEqual(restored.count('\r\n'), 3)
 
 
+class SequencePaddingTest(unittest.TestCase):
+    def test_pads_to_two_digits(self):
+        src = (
+            '| 序号 | 名称 |\n'
+            '| --- | --- |\n'
+            '| 1 | 甲 |\n'
+            '| 9 | 乙 |\n'
+            '| 10 | 丙 |\n'
+            '| 100 | 丁 |\n'
+        )
+        out = tf.format_markdown_tables(src).splitlines()
+        self.assertEqual([cells_of(l)[0] for l in out[2:]], ['01', '09', '10', '100'])
+
+    def test_only_sequence_header_column(self):
+        # 时间列(年份)、其他数字列都不该补零
+        src = (
+            '| 时间 | 数量 | 序号 | 名称 |\n'
+            '| --- | --- | --- | --- |\n'
+            '| 1971 | 1 | 1 | 甲 |\n'
+            '| 1985 | 2 | 12 | 乙 |\n'
+        )
+        out = tf.format_markdown_tables(src).splitlines()
+        row = cells_of(out[2])
+        self.assertEqual(row, ['1971', '1', '01', '甲'])
+        self.assertEqual(cells_of(out[3])[2], '12')
+
+    def test_non_numeric_values_untouched(self):
+        src = (
+            '| 序号 | 名称 |\n'
+            '| --- | --- |\n'
+            '| 1.1 | 甲 |\n'
+            '|  | 乙 |\n'
+            '| A-1 | 丙 |\n'
+            '| -1 | 丁 |\n'
+            '| 0 | 戊 |\n'
+        )
+        out = tf.format_markdown_tables(src).splitlines()
+        self.assertEqual([cells_of(l)[0] for l in out[2:]],
+                         ['1.1', '', 'A-1', '-1', '00'])
+
+    def test_header_with_spaces_matches(self):
+        src = '| 序 号 | 名称 |\n| --- | --- |\n| 3 | 甲 |\n'
+        out = tf.format_markdown_tables(src).splitlines()
+        self.assertEqual(cells_of(out[2])[0], '03')
+
+    def test_not_applied_without_sequence_header(self):
+        # Terraria 的「下/左」是 0/1 标记,不能当序号补零
+        src = '|下|左| 进度 |\n|1|1| [x] |\n|0|1| [ ] |\n'
+        out = tf.format_markdown_tables(src).splitlines()
+        self.assertEqual([cells_of(l)[:2] for l in out[2:]], [['1', '1'], ['0', '1']])
+
+    def test_idempotent(self):
+        src = '| 序号 | 名称 |\n| --- | --- |\n| 7 | 甲 |\n'
+        once = tf.format_markdown_tables(src)
+        self.assertEqual(tf.format_markdown_tables(once), once)
+
+    def test_padding_affects_column_width(self):
+        # 补零后列宽按 '01' 计算,分隔行随之变宽
+        src = '| 序号 | 名称 |\n| --- | --- |\n| 1 | 甲 |\n'
+        out = tf.format_markdown_tables(src).splitlines()
+        self.assertEqual(out[0], '| 序号 | 名称 |')
+        self.assertEqual(out[1], '| ---- | ---- |')
+        self.assertEqual(out[2], '| 01   | 甲   |')
+
+    def test_real_reference_file_sequence(self):
+        path = os.path.join(_DATA_DIR, '控制_原始.md')
+        if not os.path.exists(path):
+            self.skipTest('data/控制_原始.md 不存在')
+        with open(path, 'r', encoding='utf-8') as f:
+            out = tf.format_markdown_tables(f.read())
+        first = [l for l in out.splitlines() if l.lstrip().startswith('|')][:5]
+        self.assertEqual([cells_of(l)[0] for l in first[2:]],
+                         ['01', '02', '03'])
+
+
 REFERENCE_FILES = [
     os.path.join(_DATA_DIR, '控制.md'),
     os.path.join(_DATA_DIR, '控制_原始.md'),
@@ -257,7 +333,11 @@ class RealFileTest(unittest.TestCase):
         self.assertEqual(once, twice, '反复整形结果必须稳定: %s' % path)
 
         def content_cells(text):
-            """非分隔行的单元格内容(分隔行会被规范化,不参与比对)"""
+            """非分隔行的单元格内容(分隔行会被规范化,不参与比对)
+
+            序号列会按规则补零(1 → 01),比较时把纯数字归一化,避免把
+            "有意的补零"误判成内容丢失。
+            """
             out = []
             for line in text.splitlines():
                 if not line.lstrip().startswith('|'):
@@ -265,7 +345,10 @@ class RealFileTest(unittest.TestCase):
                 row = cells_of(line)
                 if not row or tf.is_separator_row(row):
                     continue
-                out.extend(c for c in row if c)
+                for cell in row:
+                    if not cell:
+                        continue
+                    out.append(str(int(cell)) if cell.isdigit() else cell)
             return out
 
         src_cells = content_cells(original)

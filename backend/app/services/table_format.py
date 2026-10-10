@@ -16,6 +16,7 @@ Markdown 表格整形(按"显示宽度"对齐)
   2. 列宽 = 该列所有单元格(表头 + 数据行)的最大显示宽度,下限 3(保证 '---' 合法)
   3. 分隔行统一为  '| ' + '-' * 列宽 + ' ',不带 :---: 对齐冒号
   4. 缺少分隔行的表格补一行;表内的自定义分隔行(整行都是 -)按列宽重写
+  5. 表头为「序号」的列自动补零到至少 2 位(1 → 01,10 → 10)
 
 本模块只依赖标准库,可单独导入做离线测试:
     python -c "from table_format import format_markdown_tables; ..."
@@ -26,6 +27,13 @@ import unicodedata
 
 # 列宽下限:少于 3 个 '-' 的分隔行部分渲染器不认,统一按 3 起步
 MIN_COL_WIDTH = 3
+
+# 序号列:表头匹配这些词(忽略空白)时该列自动补零
+SEQUENCE_HEADERS = ('序号', '序')
+# 补零后的最小位数:1 → 01,9 → 09,10 及以上不变
+SEQUENCE_MIN_DIGITS = 2
+
+_DIGITS_ONLY_RE = re.compile(r'^[0-9]+$')
 
 # 零宽字符(零宽空格/连接符/变体选择符等)不占列宽
 _ZERO_WIDTH_CODEPOINTS = frozenset([
@@ -107,6 +115,33 @@ def is_separator_row(cells) -> bool:
     return all(is_separator_cell(c) for c in cells)
 
 
+def pad_sequence_numbers(header, rows) -> int:
+    """
+    序号列自动补零(最小 SEQUENCE_MIN_DIGITS 位):1 → 01,9 → 09,10/100 不变。
+
+    只处理表头匹配 SEQUENCE_HEADERS 的列,且只处理纯数字单元格 ——
+    年份(时间列)、0/1 标记、1.1 这类带小数点或前缀的编号一律原样保留。
+    就地修改 rows,返回被补零的单元格个数。
+    """
+    cols = [i for i, h in enumerate(header or [])
+            if ''.join(str(h).split()) in SEQUENCE_HEADERS]
+    if not cols:
+        return 0
+
+    changed = 0
+    for row in rows:
+        if not row or is_separator_row(row):
+            continue
+        for c in cols:
+            if c >= len(row):
+                continue
+            value = row[c].strip()
+            if len(value) < SEQUENCE_MIN_DIGITS and _DIGITS_ONLY_RE.match(value):
+                row[c] = value.zfill(SEQUENCE_MIN_DIGITS)
+                changed += 1
+    return changed
+
+
 def _render_cell(text: str, width: int) -> str:
     pad = width - display_width(text)
     if pad < 0:
@@ -134,6 +169,9 @@ def format_table_block(lines):
     has_separator = is_separator_row(rows[1])
     header = rows[0]
     data_rows = rows[2:] if has_separator else rows[1:]
+
+    # 序号列补零要放在算列宽之前:补零会改变该格的显示宽度
+    pad_sequence_numbers(header, data_rows)
 
     # 列数取全表最大值:某行列数偏少时补空格,偏多时保留(不丢数据)
     ncol = max(len(r) for r in rows)
