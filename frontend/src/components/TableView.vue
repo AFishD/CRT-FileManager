@@ -29,7 +29,7 @@
             :key="index"
             :ref="el => { if (el) rowRefs[index] = el }"
             :class="{
-              'highlight': highlightedRowIndex === index,
+              'highlight': index === selectedRowIndex || index === clickLitIndex,
               'completed': isRowCompleted(index),
               'separator-row': isSeparatorRow(index)
             }"
@@ -75,7 +75,8 @@ const props = defineProps({
 
 const emit = defineEmits(['update'])
 
-const selectedRowIndex = ref(0)
+const selectedRowIndex = ref(0)   // 键盘光标:只由 ↑↓ / 空格 / 回车 移动
+const clickLitIndex = ref(-1)     // 鼠标点击点亮的行(纯视觉,不影响键盘光标)
 const scrollContainerRef = ref(null)
 const rowRefs = ref([])
 const headerRef = ref(null)
@@ -85,34 +86,53 @@ const columnWidths = ref([])
 // === 选中行"荧光"点亮/熄灭 ===
 // 用 JS 逐帧驱动透明度而不是 CSS transition:快照克隆体是全新渲染,
 // CSS 过渡的中间态不会进入快照,画面会瞬间跳到终值;JS 每帧写一次
-// 样式变量,每次变更都触发快照,渐隐才能在画面上真正可见
+// 样式变量,每次变更都触发快照,渐隐才能在画面上真正可见。
+//
+// 键盘行与鼠标点击行各有一条独立时间线:点鼠标不会移动键盘光标,
+// 也不会把键盘行的余晖掐掉;每条时间线只写自己那一行的 --sel-alpha
 const LIT_HOLD_MS = 600
 const FADE_MS = 700
-let selectionDimTimer = null
-let selectionFadeRaf = 0
 
-const setSelectedAlpha = (a) => {
-  const row = rowRefs.value[selectedRowIndex.value]
-  if (row && row.style) row.style.setProperty('--sel-alpha', String(a))
-}
+const createGlow = () => {
+  let index = -1
+  let raf = 0
+  let timer = null
 
-const startSelectionFade = () => {
-  const t0 = performance.now()
-  const step = (t) => {
-    const k = Math.min(1, (t - t0) / FADE_MS)
-    // 二次衰减曲线:先快后慢,接近荧光粉熄灭的物理感受
-    setSelectedAlpha(Math.pow(1 - k, 2))
-    if (k < 1) selectionFadeRaf = requestAnimationFrame(step)
+  const setAlpha = (value) => {
+    const row = rowRefs.value[index]
+    if (row && row.style) row.style.setProperty('--sel-alpha', String(value))
   }
-  selectionFadeRaf = requestAnimationFrame(step)
+
+  const startFade = () => {
+    const t0 = performance.now()
+    const step = (t) => {
+      const k = Math.min(1, (t - t0) / FADE_MS)
+      // 二次衰减曲线:先快后慢,接近荧光粉熄灭的物理感受
+      setAlpha(Math.pow(1 - k, 2))
+      raf = k < 1 ? requestAnimationFrame(step) : 0
+    }
+    raf = requestAnimationFrame(step)
+  }
+
+  return {
+    light(nextIndex) {
+      cancelAnimationFrame(raf)
+      clearTimeout(timer)
+      // 换行点亮:上一行立即熄灭(否则它的渐隐被打断会留下残亮)
+      if (index !== -1 && index !== nextIndex) setAlpha(0)
+      index = nextIndex
+      setAlpha(1)
+      timer = setTimeout(startFade, LIT_HOLD_MS)
+    },
+    dispose() {
+      cancelAnimationFrame(raf)
+      clearTimeout(timer)
+    }
+  }
 }
 
-const lightSelection = () => {
-  cancelAnimationFrame(selectionFadeRaf)
-  setSelectedAlpha(1)
-  clearTimeout(selectionDimTimer)
-  selectionDimTimer = setTimeout(startSelectionFade, LIT_HOLD_MS)
-}
+const keyboardGlow = createGlow()
+const clickGlow = createGlow()
 
 const calculateColumnWidths = async () => {
   await nextTick();
@@ -333,7 +353,7 @@ const scrollSelectionIntoView = () => {
 };
 
 watch(selectedRowIndex, () => {
-  lightSelection();
+  keyboardGlow.light(selectedRowIndex.value);
   scrollSelectionIntoView();
 }, { flush: 'post' });
 
@@ -349,7 +369,7 @@ onMounted(() => {
     fitVisibleRows();
     scrollContainerRef.value?.focus();
     // 初始选中行也点亮,静置后同样渐隐
-    lightSelection();
+    keyboardGlow.light(selectedRowIndex.value);
   });
 
   // 像素字体异步加载完成后表头高度会变,挂载时测的几何是过期的,
@@ -379,8 +399,8 @@ onMounted(() => {
   onUnmounted(() => {
     window.removeEventListener('keydown', handleKeydown);
     resizeObserver.disconnect();
-    clearTimeout(selectionDimTimer);
-    cancelAnimationFrame(selectionFadeRaf);
+    keyboardGlow.dispose();
+    clickGlow.dispose();
   });
 })
 
@@ -400,8 +420,6 @@ const visibleRows = computed(() => {
 });
 
 const progressColumnIndex = computed(() => props.tableData.header.length - 1)
-
-const highlightedRowIndex = computed(() => selectedRowIndex.value)
 
 const isRowCompleted = (rowIndex) => {
   if (progressColumnIndex.value === -1) return false
@@ -426,8 +444,11 @@ const toggleRowCompletion = (rowIndex) => {
 }
 const handleRowClick = (rowIndex) => {
   if (isSeparatorRow(rowIndex)) return
-  
-  selectedRowIndex.value = rowIndex
+
+  // 鼠标点击:只切换这一行的状态 + 点亮它,不移动键盘光标。
+  // 键盘光标不动 => 不触发 scrollSelectionIntoView => 画面不会跟着跳
+  clickLitIndex.value = rowIndex
+  clickGlow.light(rowIndex)
   toggleRowCompletion(rowIndex)
 }
 const moveSelectionUp = () => {
@@ -451,10 +472,15 @@ const moveSelectionDown = () => {
 }
 const handleWheel = (event) => {
   event.preventDefault()
-  if (event.deltaY < 0) {
-    moveSelectionUp()
-  } else if (event.deltaY > 0) {
-    moveSelectionDown()
+  const container = scrollContainerRef.value
+  if (!container) return
+  const dir = event.deltaY < 0 ? -1 : event.deltaY > 0 ? 1 : 0
+  if (!dir) return
+  // 滚轮只滚动画面(按整行吸附,保持"只显示完整行"),不再移动键盘光标;
+  // 否则点完鼠标再滚一格,画面会被拽回键盘光标所在的旧位置
+  const next = snapScroll(container.scrollTop + dir * rowStride())
+  if (Math.abs(next - container.scrollTop) > 1) {
+    container.scrollTop = next
   }
 }
 const handleKeydown = (event) => {
