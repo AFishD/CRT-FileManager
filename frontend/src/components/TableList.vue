@@ -14,14 +14,18 @@
         :key="index"
         :ref="el => { if (el) itemRefs[index] = el }"
         class="list-line"
-        :class="{ 'active': index === currentIndex, 'selected': index === selectedIndex }"
+        :class="{
+          'active': index === currentIndex,
+          'selected': index === selectedIndex,
+          'completed': stats[index].completed
+        }"
         @click="select(index)"
       >
         <span class="tree-prefix">{{ index === tables.length - 1 ? '└── ' : '├── ' }}</span>
         <span class="table-icon">◈</span>
         <span class="table-title">{{ table.title || `表格 ${index + 1}` }}</span>
-        <span v-if="progressOf(table).total" class="table-progress">
-          {{ progressOf(table).done }}/{{ progressOf(table).total }}
+        <span v-if="stats[index].total" class="table-progress">
+          {{ stats[index].done }}/{{ stats[index].total }}
         </span>
       </div>
     </div>
@@ -29,7 +33,7 @@
 </template>
 
 <script setup>
-import { ref, nextTick, onMounted, onUnmounted, watch } from 'vue'
+import { ref, computed, nextTick, onMounted, onUnmounted, watch } from 'vue'
 
 const props = defineProps({
   tables: {
@@ -51,13 +55,18 @@ const emit = defineEmits(['select'])
 const itemRefs = ref([])
 const selectedIndex = ref(props.currentIndex)
 
-// 进度列(最后一列)里 [x] 的条数 / 数据行数;分隔行(空数组)不计入
-const progressOf = (table) => {
+// 每张表的进度:进度列(最后一列)里 [x] 的条数 / 数据行数;分隔行(空数组)不计入。
+// completed = 有数据行且全部为 [x] —— 列表里按"内容页已完成行"的样式显示
+const stats = computed(() => props.tables.map(table => {
   const rows = (table && table.rows) || []
   const dataRows = rows.filter(r => Array.isArray(r) && r.length > 0)
   const done = dataRows.filter(r => String(r[r.length - 1] ?? '').trim() === '[x]').length
-  return { done, total: dataRows.length }
-}
+  return {
+    done,
+    total: dataRows.length,
+    completed: dataRows.length > 0 && done === dataRows.length
+  }
+}))
 
 const scrollSelectedIntoView = () => {
   const el = itemRefs.value[selectedIndex.value]
@@ -212,5 +221,28 @@ onUnmounted(() => {
   font-size: var(--crt-font-size-xs);
   color: var(--crt-text-dim);
   flex-shrink: 0;
+}
+
+/* === 全部完成的表格 ===
+   与内容页已完成行同款:变暗 + 删除线(放在 .active 之后,保证"当前表格"若是
+   全完成,依然是变暗+删除线的样子,只保留高亮底色)。
+   删除线要逐个写在 flex 子项上 —— text-decoration 不会自动传播进 flex 项;
+   树形前缀只变暗不划线,免得把 ├── 划花 */
+.list-line.completed {
+  color: var(--crt-text-completed);
+  text-shadow: none;
+}
+
+.list-line.completed .tree-prefix,
+.list-line.completed .table-icon,
+.list-line.completed .table-title,
+.list-line.completed .table-progress {
+  color: var(--crt-text-completed);
+}
+
+.list-line.completed .table-icon,
+.list-line.completed .table-title,
+.list-line.completed .table-progress {
+  text-decoration: line-through;
 }
 </style>
