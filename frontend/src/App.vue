@@ -5,11 +5,14 @@
         :title="currentTitle"
         :currentTableIndex="currentTableIndex"
         :totalTables="totalTables"
-        :showBackButton="currentView === 'table'"
+        :showBackButton="currentView === 'table' || currentView === 'table-list'"
+        :titleClickable="currentView === 'table-list' || (currentView === 'table' && totalTables > 1)"
+        :titleToggle="currentView === 'table-list' ? '▴' : '▾'"
         @prev="prevTable"
         @next="nextTable"
         @save="saveChanges"
-        @back="showFileTree"
+        @back="goBack"
+        @title-click="toggleTableList"
       />
       
       <div class="content-area">
@@ -40,6 +43,16 @@
           />
         </div>
         
+        <!-- 文件内表格列表视图 -->
+        <div v-else-if="currentView === 'table-list'" class="file-tree-container">
+          <TableList
+            :tables="currentFileTables"
+            :currentIndex="currentTableIndex"
+            :fileName="currentFileName"
+            @select="selectTable"
+          />
+        </div>
+        
         <!-- 表格视图 -->
         <div v-else class="table-container">
           <TableView
@@ -62,6 +75,7 @@ import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import CRTEffect from './components/CRTEffect.vue'
 import HeaderBar from './components/HeaderBar.vue'
 import TableView from './components/TableView.vue'
+import TableList from './components/TableList.vue'
 import FileTree from './components/FileTree.vue'
 
 // 状态管理
@@ -100,10 +114,27 @@ const openDirectories = ref(new Set())
 
 let autoSaveInterval = null
 
+// 当前文件名(去掉目录)
+const currentFileName = computed(() => {
+  const path = currentFilePath.value || ''
+  return path.split(/[\\/]/).pop() || ''
+})
+
+// 当前文件的所有表格
+const currentFileTables = computed(() => {
+  const currentFile = allFilesData.value[currentFileIndex.value]
+  return currentFile ? currentFile.tables : []
+})
+
 // 计算当前标题
 const currentTitle = computed(() => {
   if (currentView.value === 'file-tree') {
     return 'FILE MANAGER'
+  }
+  
+  // 表格列表视图:标题显示文件名,便于确认在哪个文件里选表格
+  if (currentView.value === 'table-list') {
+    return currentFileName.value || 'TABLES'
   }
   
   if (allFilesData.value.length === 0) return 'CRT FILE MANAGER'
@@ -368,6 +399,33 @@ const showFileTree = () => {
   currentFilePath.value = ''
 }
 
+// 表格列表(文件内多表格时,点标题展开/收起)
+const toggleTableList = () => {
+  if (currentView.value === 'table-list') {
+    currentView.value = 'table'
+    return
+  }
+  if (totalTables.value > 1) {
+    currentView.value = 'table-list'
+  }
+}
+
+// 从表格列表切到某张表
+const selectTable = (index) => {
+  if (index < 0 || index >= totalTables.value) return
+  currentTableIndex.value = index
+  currentView.value = 'table'
+}
+
+// 顶栏返回键:表格列表 → 当前表格;表格 → 文件树
+const goBack = () => {
+  if (currentView.value === 'table-list') {
+    currentView.value = 'table'
+  } else {
+    showFileTree()
+  }
+}
+
 // 切换目录
 const toggleDirectory = (node) => {
   if (openDirectories.value.has(node.path)) {
@@ -379,12 +437,15 @@ const toggleDirectory = (node) => {
 
 // 键盘事件处理
 const handleKeydown = (event) => {
-  if (event.key === 'Escape' && currentView.value === 'table') {
-    showFileTree()
+  if (event.key === 'Escape') {
+    // 表格列表 → 当前表格;表格 → 文件树
+    if (currentView.value === 'table-list' || currentView.value === 'table') {
+      goBack()
+    }
     return
   }
   
-  if (currentView.value !== 'table') return
+  if (currentView.value !== 'table' && currentView.value !== 'table-list') return
   
   if (event.key === 'ArrowLeft') {
     event.preventDefault()

@@ -4,10 +4,16 @@
       <button v-if="showBackButton" @click="$emit('back')" class="back-btn" title="Back (Esc)">
         ◄
       </button>
-      <div class="title-wrapper">
+      <div
+        class="title-wrapper"
+        :class="{ clickable: titleClickable }"
+        :title="titleClickable ? '表格列表 (点击切换表格)' : ''"
+        @click="onTitleClick"
+      >
         <span class="title-bracket">[</span>
         <span class="title">{{ title }}</span>
         <span class="title-bracket">]</span>
+        <span v-if="titleClickable" class="title-toggle">{{ titleToggle }}</span>
       </div>
     </div>
     <div class="right-section">
@@ -46,10 +52,24 @@ const props = defineProps({
   showBackButton: {
     type: Boolean,
     default: false
+  },
+  // 标题可点击:多表格文件里点标题展开表格列表
+  titleClickable: {
+    type: Boolean,
+    default: false
+  },
+  // 标题右侧的展开/收起提示符
+  titleToggle: {
+    type: String,
+    default: '▾'
   }
 })
 
-defineEmits(['prev', 'next', 'save', 'back'])
+const emit = defineEmits(['prev', 'next', 'save', 'back', 'title-click'])
+
+const onTitleClick = () => {
+  if (props.titleClickable) emit('title-click')
+}
 
 const hasPrev = computed(() => props.currentTableIndex > 0)
 const hasNext = computed(() => props.currentTableIndex < props.totalTables - 1)
@@ -109,6 +129,26 @@ const hasNext = computed(() => props.currentTableIndex < props.totalTables - 1)
   align-items: center;
   min-width: 0;
   overflow: hidden;
+}
+
+/* 可点击(多表格文件):悬停给反馈,右侧挂一个展开提示符 */
+.title-wrapper.clickable {
+  cursor: pointer;
+  padding: 2px 6px;
+  border: 1px solid transparent;
+}
+
+.title-wrapper.clickable:hover {
+  background: var(--crt-highlight);
+  border-color: var(--crt-border);
+  box-shadow: 0 0 6px rgba(255, 255, 255, 0.06);
+}
+
+.title-toggle {
+  color: var(--crt-text-dim);
+  font-size: var(--crt-font-size-xs);
+  flex-shrink: 0;
+  padding: 0 var(--crt-spacing-xs);
 }
 
 .title-bracket {
