@@ -180,6 +180,12 @@ function onCanvasClick(e) {
 }
 
 function onCanvasWheel(e) {
+  // 必须拦住"画布底下内容"的原生滚动:CRT 画布虽然接管了指针,浏览器仍会把
+  // 滚轮的默认行为作用到画布下方的滚动容器上 —— 表格页里这会在"选中行整行吸附"
+  // 之外再滚 deltaY 像素,行网格被打乱、被移动的行也不再居中。
+  // 因此这里总是 preventDefault,滚轮改由下面转发给真实 DOM:
+  // 目标自己处理了(如表格页)就到此为止,没处理则由兜底逻辑滚它的滚动祖先。
+  e.preventDefault()
   const target = contentTargetAt(e.clientX, e.clientY)
   if (!target) return
   const ev = new WheelEvent('wheel', {
@@ -395,7 +401,8 @@ function setup() {
     canvasRef.value.addEventListener('pointermove', onCanvasPointerMove, { passive: true })
     canvasRef.value.addEventListener('pointerleave', onCanvasPointerLeave)
     canvasRef.value.addEventListener('click', onCanvasClick)
-    canvasRef.value.addEventListener('wheel', onCanvasWheel, { passive: true })
+    // 不能是 passive:上面要 preventDefault 拦掉浏览器对画布下方内容的原生滚动
+    canvasRef.value.addEventListener('wheel', onCanvasWheel, { passive: false })
   }
 
   resizeObserver = new ResizeObserver(() => {

@@ -472,15 +472,10 @@ const moveSelectionDown = () => {
 }
 const handleWheel = (event) => {
   event.preventDefault()
-  const container = scrollContainerRef.value
-  if (!container) return
-  const dir = event.deltaY < 0 ? -1 : event.deltaY > 0 ? 1 : 0
-  if (!dir) return
-  // 滚轮只滚动画面(按整行吸附,保持"只显示完整行"),不再移动键盘光标;
-  // 否则点完鼠标再滚一格,画面会被拽回键盘光标所在的旧位置
-  const next = snapScroll(container.scrollTop + dir * rowStride())
-  if (Math.abs(next - container.scrollTop) > 1) {
-    container.scrollTop = next
+  if (event.deltaY < 0) {
+    moveSelectionUp()
+  } else if (event.deltaY > 0) {
+    moveSelectionDown()
   }
 }
 const handleKeydown = (event) => {
