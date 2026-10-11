@@ -152,13 +152,17 @@ function setHoverChain(target) {
 
 function onCanvasPointerMove(e) {
   let target = contentTargetAt(e.clientX, e.clientY)
-  // 表头是界面 chrome 而非内容:悬停表头不产生任何高亮。
+  // 表头是界面 chrome 而非内容:悬停表头不产生内容高亮。
   // 否则表头与首行边界处,行背景随鼠标快速亮灭,视觉上
-  // 表头列分隔区域出现"部分显示/部分隐藏"的闪烁
+  // 表头列分隔区域出现"部分显示/部分隐藏"的闪烁。
+  // 但光标仍按表头自己的样式来 —— 点表头可以切换筛选,应该显示手型
+  const cursorTarget = target
   if (target && target.closest && target.closest('thead')) target = null
   setHoverChain(target)
   if (canvasRef.value) {
-    canvasRef.value.style.cursor = target ? (getComputedStyle(target).cursor || 'default') : 'default'
+    canvasRef.value.style.cursor = cursorTarget
+      ? (getComputedStyle(cursorTarget).cursor || 'default')
+      : 'default'
   }
 }
 

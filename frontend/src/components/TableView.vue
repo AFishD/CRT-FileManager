@@ -48,20 +48,21 @@
           </tr>
         </tbody>
       </table>
-      <!-- 不足一页时的"空行"填充:左右边框与列网格同宽,内部无分隔线 -->
+      <!-- 不足一页时的"空行"填充:左右边框与列网格同宽,内部无分隔线。
+           筛选后一行不剩时,提示就挂在这块空行区顶部(表头正下方) -->
       <div
         class="table-empty-fill"
         v-show="emptyFillHeight > 0"
         :style="{ height: emptyFillHeight + 'px' }"
-      ></div>
+      >
+        <div v-if="isFiltered && displayIndexes.length === 0" class="table-filter-empty">
+          NO UNFINISHED ROWS
+        </div>
+      </div>
     </div>
     <!-- 吸收"已拟合整行"与容器底部之间的空隙,并补上左右边框,
          让表格框架一直连到底部横线(横线因此固定在页面底部,不随内容浮动) -->
-    <div class="table-frame-fill" v-show="fittedHeight > 0">
-      <div v-if="isFiltered && displayIndexes.length === 0" class="table-filter-empty">
-        NO UNFINISHED ROWS
-      </div>
-    </div>
+    <div class="table-frame-fill" v-show="fittedHeight > 0"></div>
     <!-- 底部横线:普通文档流元素(紧跟滚动区之后)。
          不用绝对定位 —— foreignObject 快照的全新布局中,绝对定位
          相对 vh 替换后的 flex 祖先会漂移 ~20px,导致线压到末行上 -->
@@ -320,10 +321,12 @@ const fitVisibleRows = () => {
   // 除垫满一页外,还要再多垫出网格基准偏移(base):不足一页时若
   // scrollHeight == clientHeight,scrollTop 会被钳在 0,吸附点
   // base(行贴齐表头所需)滚不到 → 表头脱钉、行与表头露出缝隙,
-  // 视觉上"回退到原效果"。多垫的部分在视口下方,被裁掉不可见
+  // 视觉上"回退到原效果"。多垫的部分在视口下方,被裁掉不可见。
+  // 注意:筛选到 0 行时也要垫(gridBase() 会用表头几何兜底),
+  // 否则表头同样会脱钉、看着整体下移
   const table = container.querySelector('table');
-  if (table && rowRefs.value[0]) {
-    const basePad = Math.max(0, rowTopInContent(rowRefs.value[0]) - top);
+  if (table) {
+    const basePad = Math.max(0, gridBase());
     emptyFillHeight.value = Math.max(0, desired + basePad - table.offsetHeight);
   }
 };
@@ -338,13 +341,32 @@ const rowTopInContent = (rowEl) => {
     + container.scrollTop;
 };
 
+// 行网格基准:首行顶边贴住表头下沿时的 scrollTop(= 首行在内容坐标里的位置 - 表头钉住后的下沿)。
+// 没有可显示的行(例如筛选后 0 行)时用表格/表头几何推算首行本该出现的位置 ——
+// 否则 scrollTop 会停在 0,表头回到自然位置(border-top + border-spacing,比钉住时低 ~8px),
+// 视觉上就是"点完表头整行表头往下跳"
+const gridBase = () => {
+  const container = scrollContainerRef.value;
+  if (!container) return 0;
+  const r0 = rowRefs.value[0];
+  if (r0) return rowTopInContent(r0) - headerSnapTop();
+  const table = container.querySelector('table');
+  const th = headerRef.value ? headerRef.value.querySelector('th') : null;
+  if (!table || !th) return 0;
+  const cs = getComputedStyle(table);
+  const borderTop = parseFloat(cs.borderTopWidth) || 0;
+  const parts = String(cs.borderSpacing || '0px').trim().split(/\s+/);
+  const spacingY = parseFloat(parts[1] !== undefined ? parts[1] : parts[0]) || 0;
+  const rowStart = rowTopInContent(table) + borderTop + spacingY + th.offsetHeight + spacingY;
+  return rowStart - headerSnapTop();
+};
+
 const snapScroll = (target) => {
   const container = scrollContainerRef.value;
-  const r0 = rowRefs.value[0];
-  if (!container || !r0) return Math.max(0, target || 0);
+  if (!container) return Math.max(0, target || 0);
   const stride = rowStride();
   // 网格基准:第 0 行顶边贴住表头下沿时的 scrollTop
-  const base = rowTopInContent(r0) - headerSnapTop();
+  const base = gridBase();
   const rows = rowRefs.value.length;
   // 用 fitVisibleRows 的拟合结果(与高度拟合同源);用容器高度重算会
   // 因间隙扣减向下取整少一行,导致钳制上限越过 rawMax、吸附失效
@@ -360,6 +382,18 @@ const snapScroll = (target) => {
   const k = Math.min(kMax, Math.max(0, Math.round(((target || 0) - base) / stride)));
   const snapped = base + k * stride;
   return Math.max(0, Math.min(rawMax, Math.min(gridMax, snapped)));
+};
+
+// 吸附到网格基准位(首行贴住表头下沿)。
+// 注意要等"空行填充"的高度落进 DOM 再吸附:填充高度是响应式的,写晚了
+// 滚动区还只有几行高,scrollTop 会被钳到 0 —— 表头随之不再被 sticky 钉住,
+// 视觉上整行表头下移 ~8px(border-spacing + border-top 的自然位置)
+const snapToGridTop = async () => {
+  await nextTick();
+  const container = scrollContainerRef.value;
+  if (!container) return;
+  container.scrollTop = snapScroll(0);
+  await nextTick();
 };
 
 const scrollSelectionIntoView = () => {
@@ -385,31 +419,26 @@ watch(selectedRowIndex, () => {
 }, { flush: 'post' });
 
 // 筛选开/关:显示行数变了,清掉旧的行引用并重新拟合整行网格、光标回到首行
-watch(() => props.filterIndexes, () => {
+watch(() => props.filterIndexes, async () => {
   rowRefs.value = [];
   selectedRowIndex.value = 0;
   clickLitIndex.value = -1;
-  nextTick(() => {
-    calculateColumnWidths();
-    updateHeaderHeight();
-    fitVisibleRows();
-    if (scrollContainerRef.value) {
-      scrollContainerRef.value.scrollTop = snapScroll(0);
-    }
-    keyboardGlow.light(0);
-  });
+  await nextTick();
+  calculateColumnWidths();
+  updateHeaderHeight();
+  fitVisibleRows();
+  keyboardGlow.light(0);
+  await snapToGridTop();
 }, { deep: true });
 
 
 onMounted(() => {
   nextTick(() => {
     updateHeaderHeight();
-    if (scrollContainerRef.value) {
-        // 初始也吸附到行网格,首屏即只有完整行
-        scrollContainerRef.value.scrollTop = snapScroll(0);
-    }
     // 初始化时计算一轮可用行数,容器高度向下取整到整行
     fitVisibleRows();
+    // 初始也吸附到行网格,首屏即只有完整行(短表格要等空行填充落定后再吸附)
+    snapToGridTop();
     scrollContainerRef.value?.focus();
     // 初始选中行也点亮,静置后同样渐隐
     keyboardGlow.light(selectedRowIndex.value);
@@ -597,7 +626,7 @@ const handleKeydown = (event) => {
   box-sizing: border-box;
 }
 
-/* 筛选后没有剩余未完成项时的提示(在滚动区外的空隙里,不影响行网格) */
+/* 筛选后没有剩余未完成项时的提示(挂在空行填充区顶部,表头正下方) */
 .table-filter-empty {
   padding-top: var(--crt-spacing-lg);
   text-align: center;
@@ -673,10 +702,10 @@ th {
   box-shadow: 0 -2px 0 0 var(--crt-bg);
 }
 
-/* 筛选模式:表头挂强调色,提示"现在只看未完成" */
+/* 筛选模式:表头文字变强调色,提示"现在只看未完成"
+   (只改文字颜色,边框/尺寸不动 —— 避免表头看着"跳"一下) */
 .table-view.filtered th {
   color: var(--crt-accent);
-  border-bottom-color: var(--crt-accent);
   text-shadow: 0 0 var(--crt-glow-strength) var(--crt-accent);
 }
 
