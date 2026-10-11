@@ -120,11 +120,14 @@ function contentTargetAt(clientX, clientY) {
   // 遮挡检测:滚动容器内、粘性表头底边之上的区域,内容被表头
   // (或其 16px 覆盖阴影)挡住 —— box-shadow 只参与绘制不参与命中,
   // 滚过表头的行在那里仍然可被 elementFromPoint 命中,
-  // 造成"看不见却能点到下方行"的泄漏,一律视为不可交互
+  // 造成"看不见却能点到下方行"的泄漏,一律视为不可交互。
+  // 注意要用整个 thead 判断"点的是不是表头":只看第一个 th 的话,
+  // 第 2 列起的所有表头单元格都会被当成被遮挡的行、点击被吞掉
   const scrollHost = el.closest ? el.closest('.table-view') : null
   if (scrollHost && scrollHost !== el) {
-    const th = scrollHost.querySelector('thead th')
-    if (th && !th.contains(el)) {
+    const thead = scrollHost.querySelector('thead')
+    const th = thead ? thead.querySelector('th') : null
+    if (thead && th && !thead.contains(el)) {
       const thBottom = th.getBoundingClientRect().bottom
       const hostTop = scrollHost.getBoundingClientRect().top
       if (pt.y < thBottom && pt.y >= hostTop) return null
