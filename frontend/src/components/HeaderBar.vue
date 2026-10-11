@@ -17,6 +17,9 @@
       </div>
     </div>
     <div class="right-section">
+      <span v-if="filterLabel" class="filter-badge" title="表头筛选:只显示未完成">
+        {{ filterLabel }}
+      </span>
       <div class="nav-group" v-if="totalTables > 1">
         <button @click="$emit('prev')" :disabled="!hasPrev" class="nav-btn">
           ◄
@@ -62,6 +65,11 @@ const props = defineProps({
   titleToggle: {
     type: String,
     default: '▾'
+  },
+  // 表头筛选模式下的状态徽标(空串则不显示)
+  filterLabel: {
+    type: String,
+    default: ''
   }
 })
 
@@ -179,6 +187,17 @@ const hasNext = computed(() => props.currentTableIndex < props.totalTables - 1)
   display: flex;
   align-items: center;
   gap: var(--crt-spacing-xs);
+}
+
+/* 表头筛选模式徽标:强调色边框,一眼看出"现在只看未完成" */
+.filter-badge {
+  font-size: var(--crt-font-size-xs);
+  color: var(--crt-accent);
+  border: 1px solid var(--crt-accent);
+  padding: 4px 8px;
+  letter-spacing: 1px;
+  text-shadow: 0 0 var(--crt-glow-strength) var(--crt-accent);
+  white-space: nowrap;
 }
 
 .page-indicator {

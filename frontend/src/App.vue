@@ -8,6 +8,7 @@
         :showBackButton="currentView === 'table' || currentView === 'table-list'"
         :titleClickable="currentView === 'table-list' || (currentView === 'table' && totalTables > 1)"
         :titleToggle="currentView === 'table-list' ? '▴' : '▾'"
+        :filterLabel="currentView === 'table' ? filterLabel : ''"
         @prev="prevTable"
         @next="nextTable"
         @save="saveChanges"
@@ -58,7 +59,9 @@
           <TableView
             :key="`${currentFileIndex}-${currentTableIndex}`"
             :tableData="currentTableData"
+            :filterIndexes="currentFilterIndexes"
             @update="handleTableUpdate"
+            @toggle-filter="setTableFilter"
           />
         </div>
         
@@ -119,6 +122,10 @@ const currentFilePath = ref('')
 const fileTree = ref([])
 const openDirectories = ref(new Set())
 
+// 表头筛选(只看未完成)的冻结行下标:按 "文件路径::表格下标" 存,
+// 因此同一文件里来回切表格显示状态不变;离开文件(回文件树/换文件)即清空
+const tableFilters = ref({})
+
 let autoSaveInterval = null
 
 // 当前文件名(去掉目录)
@@ -132,6 +139,44 @@ const currentFileTables = computed(() => {
   const currentFile = allFilesData.value[currentFileIndex.value]
   return currentFile ? currentFile.tables : []
 })
+
+// 当前表格的筛选状态(null = 未筛选;数组 = 点击表头那一刻的未完成行下标)
+const filterKey = computed(() => `${currentFilePath.value}::${currentTableIndex.value}`)
+const currentFilterIndexes = computed(() => tableFilters.value[filterKey.value] ?? null)
+
+// 筛选状态给顶栏用的小徽标:显示"还剩几项没完成 / 冻结了几项"
+// (冻结集合不随勾选变化,所以这里统计的是其中仍未完成的数量)
+const filterLabel = computed(() => {
+  const frozen = currentFilterIndexes.value
+  if (!Array.isArray(frozen)) return ''
+  const rows = (currentFileTables.value[currentTableIndex.value] || {}).rows || []
+  const progressCol = ((currentFileTables.value[currentTableIndex.value] || {}).header || []).length - 1
+  const remaining = frozen.filter(i => {
+    const row = rows[i]
+    return Array.isArray(row) && row.length > 0 && row[progressCol] !== '[x]'
+  }).length
+  return `未完成 ${remaining}/${frozen.length}`
+})
+
+// 表头点击回调:indexes 为 null 表示关闭筛选
+const setTableFilter = (indexes) => {
+  if (!currentFilePath.value) return
+  const next = { ...tableFilters.value }
+  if (indexes === null) delete next[filterKey.value]
+  else next[filterKey.value] = indexes
+  tableFilters.value = next
+}
+
+// 离开文件:清掉该文件的筛选状态(生命周期到"退出文件"为止)
+const clearFilters = (filePath) => {
+  const next = {}
+  let changed = false
+  for (const [key, value] of Object.entries(tableFilters.value)) {
+    if (!filePath || key.startsWith(`${filePath}::`)) changed = true
+    else next[key] = value
+  }
+  if (changed) tableFilters.value = next
+}
 
 // 计算当前标题
 const currentTitle = computed(() => {
@@ -393,6 +438,7 @@ const nextTable = () => {
 const selectFile = (filePath) => {
   const fileIndex = allFilesData.value.findIndex(f => f.filePath === filePath)
   if (fileIndex >= 0) {
+    if (filePath !== currentFilePath.value) clearFilters(currentFilePath.value)
     currentFileIndex.value = fileIndex
     currentTableIndex.value = 0
     currentFilePath.value = filePath
@@ -402,6 +448,7 @@ const selectFile = (filePath) => {
 
 // 显示文件树
 const showFileTree = () => {
+  clearFilters(currentFilePath.value)   // 退出文件 => 筛选状态失效
   currentView.value = 'file-tree'
   currentFilePath.value = ''
 }

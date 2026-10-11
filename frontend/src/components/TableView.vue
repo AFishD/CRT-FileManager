@@ -2,6 +2,7 @@
   <div class="table-view-container">
     <div
       class="table-view"
+      :class="{ filtered: isFiltered }"
       ref="scrollContainerRef"
       :style="{ scrollPaddingTop: `${headerHeight}px` }"
       @wheel="handleWheel"
@@ -16,7 +17,8 @@
           />
         </colgroup>
 
-        <thead ref="headerRef">
+        <!-- 点表头切换筛选模式:只显示"点击那一刻还未完成"的行 -->
+        <thead ref="headerRef" @click="toggleFilter">
           <tr>
             <th v-for="(header, index) in visibleHeader" :key="index">
               {{ header }}
@@ -55,7 +57,11 @@
     </div>
     <!-- 吸收"已拟合整行"与容器底部之间的空隙,并补上左右边框,
          让表格框架一直连到底部横线(横线因此固定在页面底部,不随内容浮动) -->
-    <div class="table-frame-fill" v-show="fittedHeight > 0"></div>
+    <div class="table-frame-fill" v-show="fittedHeight > 0">
+      <div v-if="isFiltered && displayIndexes.length === 0" class="table-filter-empty">
+        NO UNFINISHED ROWS
+      </div>
+    </div>
     <!-- 底部横线:普通文档流元素(紧跟滚动区之后)。
          不用绝对定位 —— foreignObject 快照的全新布局中,绝对定位
          相对 vh 替换后的 flex 祖先会漂移 ~20px,导致线压到末行上 -->
@@ -70,10 +76,15 @@ const props = defineProps({
   tableData: {
     type: Object,
     required: true
+  },
+  // 表头筛选:点击表头时冻结下来的"未完成行"原始下标;null = 未筛选
+  filterIndexes: {
+    type: Array,
+    default: null
   }
 })
 
-const emit = defineEmits(['update'])
+const emit = defineEmits(['update', 'toggle-filter'])
 
 const selectedRowIndex = ref(0)   // 键盘光标:只由 ↑↓ / 空格 / 回车 移动
 const clickLitIndex = ref(-1)     // 鼠标点击点亮的行(纯视觉,不影响键盘光标)
@@ -82,6 +93,19 @@ const rowRefs = ref([])
 const headerRef = ref(null)
 const headerHeight = ref(0)
 const columnWidths = ref([])
+
+// === 筛选模式:显示哪些行 ===
+// 未筛选 = 全部行(含分隔行);筛选 = 只显示"点击表头那一刻还未完成"的行。
+// 下标在点击时冻结一次,之后勾选/取消都不会让行从列表里增删
+// (即:记录后手动改成已完成的行仍然留在列表里,只是变成已完成样式)。
+// 组件里所有"行下标"都指显示下标,rowAt() 负责换算回真实行。
+const isFiltered = computed(() => Array.isArray(props.filterIndexes))
+const displayIndexes = computed(() => {
+  const rows = props.tableData.rows || []
+  if (!Array.isArray(props.filterIndexes)) return rows.map((_, i) => i)
+  return props.filterIndexes.filter(i => i >= 0 && i < rows.length)
+})
+const rowAt = (displayIndex) => (props.tableData.rows || [])[displayIndexes.value[displayIndex]]
 
 // === 选中行"荧光"点亮/熄灭 ===
 // 用 JS 逐帧驱动透明度而不是 CSS transition:快照克隆体是全新渲染,
@@ -167,15 +191,18 @@ const calculateColumnWidths = async () => {
     measurer.textContent = visibleHeader.value[i];
     maxContentWidth = measurer.getBoundingClientRect().width;
 
-    visibleRows.value.forEach(row => {
-      if (Array.isArray(row) && row[i] != null) {
+    // 列宽按"全表所有行"测量(不受筛选影响):开/关筛选时列宽保持不变,排版稳定
+    for (const fullRow of (props.tableData.rows || [])) {
+      if (!Array.isArray(fullRow) || fullRow.length === 0) continue
+      const row = fullRow.slice(0, -1)
+      if (row[i] != null) {
         measurer.textContent = row[i];
         const contentWidth = measurer.getBoundingClientRect().width;
         if (contentWidth > maxContentWidth) {
           maxContentWidth = contentWidth;
         }
       }
-    });
+    }
 
     idealWidths[i] = Math.min(maxContentWidth + CELL_PADDING, MAX_WIDTH);
   }
@@ -357,6 +384,22 @@ watch(selectedRowIndex, () => {
   scrollSelectionIntoView();
 }, { flush: 'post' });
 
+// 筛选开/关:显示行数变了,清掉旧的行引用并重新拟合整行网格、光标回到首行
+watch(() => props.filterIndexes, () => {
+  rowRefs.value = [];
+  selectedRowIndex.value = 0;
+  clickLitIndex.value = -1;
+  nextTick(() => {
+    calculateColumnWidths();
+    updateHeaderHeight();
+    fitVisibleRows();
+    if (scrollContainerRef.value) {
+      scrollContainerRef.value.scrollTop = snapScroll(0);
+    }
+    keyboardGlow.light(0);
+  });
+}, { deep: true });
+
 
 onMounted(() => {
   nextTick(() => {
@@ -410,8 +453,9 @@ const visibleHeader = computed(() => {
 });
 
 const visibleRows = computed(() => {
-  if (!props.tableData.rows) return [];
-  return props.tableData.rows.map(row => {
+  const rows = props.tableData.rows || [];
+  return displayIndexes.value.map(i => {
+    const row = rows[i];
     if (Array.isArray(row) && row.length > 0) {
       return row.slice(0, -1);
     }
@@ -421,19 +465,20 @@ const visibleRows = computed(() => {
 
 const progressColumnIndex = computed(() => props.tableData.header.length - 1)
 
+// 以下 rowIndex 一律是"显示下标"(见 displayIndexes)
 const isRowCompleted = (rowIndex) => {
   if (progressColumnIndex.value === -1) return false
-  const row = props.tableData.rows[rowIndex]
+  const row = rowAt(rowIndex)
   return row && row[progressColumnIndex.value] === '[x]'
 }
 const isSeparatorRow = (rowIndex) => {
-  const row = props.tableData.rows[rowIndex]
+  const row = rowAt(rowIndex)
   return row === null || row === undefined || (Array.isArray(row) && row.length === 0)
 }
 const toggleRowCompletion = (rowIndex) => {
   if (progressColumnIndex.value === -1) return
   
-  const row = props.tableData.rows[rowIndex]
+  const row = rowAt(rowIndex)
   if (!row || row.length === 0) return
   
   row[progressColumnIndex.value] = row[progressColumnIndex.value] === '[x]' ? '[ ]' : '[x]'
@@ -451,6 +496,23 @@ const handleRowClick = (rowIndex) => {
   clickGlow.light(rowIndex)
   toggleRowCompletion(rowIndex)
 }
+
+// 点击表头:开/关筛选。开启时把"此刻未完成的行"冻结成下标数组交给父组件保存
+// (状态挂在上层,切换表格再回来仍然是同一批行;退出文件才清空)
+const toggleFilter = () => {
+  if (isFiltered.value) {
+    emit('toggle-filter', null)
+    return
+  }
+  const rows = props.tableData.rows || []
+  const frozen = []
+  rows.forEach((row, i) => {
+    if (!Array.isArray(row) || row.length === 0) return        // 分隔行不算任务
+    if (row[progressColumnIndex.value] !== '[x]') frozen.push(i)
+  })
+  emit('toggle-filter', frozen)
+}
+
 const moveSelectionUp = () => {
   let newIndex = selectedRowIndex.value - 1
   while (newIndex >= 0 && isSeparatorRow(newIndex)) {
@@ -461,12 +523,12 @@ const moveSelectionUp = () => {
   }
 }
 const moveSelectionDown = () => {
-  const rows = props.tableData.rows
+  const count = displayIndexes.value.length
   let newIndex = selectedRowIndex.value + 1
-  while (newIndex < rows.length && isSeparatorRow(newIndex)) {
+  while (newIndex < count && isSeparatorRow(newIndex)) {
     newIndex++
   }
-  if (newIndex < rows.length) {
+  if (newIndex < count) {
     selectedRowIndex.value = newIndex
   }
 }
@@ -535,6 +597,16 @@ const handleKeydown = (event) => {
   box-sizing: border-box;
 }
 
+/* 筛选后没有剩余未完成项时的提示(在滚动区外的空隙里,不影响行网格) */
+.table-filter-empty {
+  padding-top: var(--crt-spacing-lg);
+  text-align: center;
+  font-size: var(--crt-font-size-xs);
+  color: var(--crt-text-dim);
+  letter-spacing: 2px;
+  text-shadow: 0 0 var(--crt-glow-strength) var(--crt-glow-color);
+}
+
 /* 不足一页的表格:末行与底线之间的空隙,以"空行"呈现 ——
    只保留左右边框(与列网格同宽),内部无分隔线 */
 .table-empty-fill {
@@ -592,12 +664,20 @@ th {
   text-overflow: ellipsis;
   white-space: nowrap;
   box-sizing: border-box;
+  cursor: pointer;
   /* 扫描线上的荧光粉效果 */
   text-shadow: 0 0 var(--crt-glow-strength) var(--crt-glow-color);
   /* 粘性表头阴影:盖住 sticky top 上方滚过的内容。
      不设 border-top:表头紧贴顶栏底线(2px),顶栏线即框架顶线,
      再画一条会视觉上出现"双线" */
   box-shadow: 0 -2px 0 0 var(--crt-bg);
+}
+
+/* 筛选模式:表头挂强调色,提示"现在只看未完成" */
+.table-view.filtered th {
+  color: var(--crt-accent);
+  border-bottom-color: var(--crt-accent);
+  text-shadow: 0 0 var(--crt-glow-strength) var(--crt-accent);
 }
 
 th:first-child {
